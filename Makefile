@@ -3,9 +3,13 @@ MODULE_NAME := bergamot-go
 GO_VERSION  := 1.21
 BUILD_DIR   := ./build
 
-.PHONY: all build clean test lint fmt vet
+.PHONY: all setup build clean test lint fmt vet
 
 all: build
+
+## setup: Prepare native dependencies and verify the cgo-linked Go build
+setup:
+	./scripts/setup.sh
 
 ## build: Compile the binary
 build:
