@@ -44,8 +44,9 @@ C++17 compiler. The C compiler should come from the same toolchain. A working ne
 is needed for recursive submodule initialization. The setup script checks that these commands
 exist; it does not install them.
 
-The only platform validated end-to-end in this repository is macOS on Apple Silicon. Linux
-x86_64 and ARM64 have platform linker selections in the bridge but have not been verified here;
+The intended release validation matrix is macOS arm64, Linux x86_64, and Linux ARM64. The only
+platform validated end-to-end in this repository so far is macOS on Apple Silicon. Linux x86_64
+and ARM64 have platform linker selections in the bridge but still require end-to-end validation;
 other OS/architecture combinations are unsupported until their cgo flags and native build are
 validated. Do not interpret a successful CMake build alone as platform support: the cgo-linked Go
 build must also succeed.
@@ -236,7 +237,7 @@ Create a translator and translate synchronously with the requested pair:
 import (
 	"fmt"
 
-	"bergamot-go/pkg"
+	"github.com/osster/bergamot-go/pkg"
 )
 
 func translate() error {

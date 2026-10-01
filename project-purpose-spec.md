@@ -273,23 +273,23 @@ Translator state, each bridge handle, and shared model calls are protected by mu
 
 ### Testing, Documentation & Release
 
-**Status:** planned  
+**Status:** in progress
 
-Write comprehensive unit and integration tests. Generate detailed API documentation with usage examples. Finalize packaging and prepare for release.
+Core unit and CGO integration coverage, package/API documentation, runnable examples, and an unreleased changelog are in place. The configured GitHub remote establishes `github.com/osster/bergamot-go` as the canonical module path, and the project owner is confirmed as release owner. The intended release matrix is macOS arm64, Linux x86_64, and Linux ARM64; Linux validation and public release publication remain pending.
 
 #### Tasks
 
 ##### Finalize packaging and prepare for release
 
-**Status:** todo
+**Status:** in progress
 
-Tag versions, write CHANGELOG, and publish package to pkg.go.dev
+`go.mod` and Go import examples use the canonical module path `github.com/osster/bergamot-go`, matching the configured Git remote. The project owner is the confirmed release owner. `CHANGELOG.md` records the unreleased work; version tagging and pkg.go.dev publication remain pending until the selected macOS arm64, Linux x86_64, and Linux ARM64 targets are validated and a version is chosen.
 
 ##### Generate API documentation with usage examples
 
-**Status:** todo
+**Status:** complete
 
-Add comprehensive godoc comments and example programs demonstrating usage patterns
+Exported package APIs and their configuration/result fields have Go documentation comments. `pkg/example_test.go` contains executable examples for config validation and lazy translator construction; the README documents translation and streaming usage.
 
 ##### Write integration tests for CGO bridge
 
@@ -301,6 +301,6 @@ Write end-to-end translation tests using real Bergamot models to validate CGO br
 
 ##### Write unit tests for core translation functions
 
-**Status:** todo
+**Status:** complete
 
-Write unit tests covering sync/async APIs, config parsing, error cases, and edge conditions
+Unit tests cover YAML/JSON parsing and validation, synchronous dispatch and lifecycle, error wrapping, context/reload, asynchronous cancellation and callbacks, streaming progress/errors/cancellation, and pooled-model concurrency and cleanup.

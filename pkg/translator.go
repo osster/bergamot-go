@@ -103,7 +103,8 @@ func loadPairSettings(configPath string) (map[string]pairSettings, string, error
 
 // Translate synchronously translates text with the model configured for
 // languagePair (for example, "en-de"). It returns an error for empty input,
-// unsupported pairs, closed translators, or native translation failures.
+// unsupported pairs, closed translators, or native translation failures. A
+// configured timeout bounds the caller's wait, but does not stop native inference.
 func (t *Translator) Translate(text, languagePair string) (string, error) {
 	if t == nil {
 		return "", newError(ErrTranslatorClosed, "translate", languagePair, nil)
@@ -212,7 +213,8 @@ func (t *Translator) ResetContext(languagePair string) error {
 }
 
 // ReloadConfig validates the current configuration file and atomically applies
-// its settings. Loaded models are retained unless their path or beam size changed.
+// its settings. Loaded models are retained unless their path or beam size changed;
+// removed or changed models are released, and their context history is cleared.
 func (t *Translator) ReloadConfig() error {
 	if t == nil {
 		return newError(ErrTranslatorClosed, "reload translator config", "", nil)
@@ -253,8 +255,9 @@ func (t *Translator) ReloadConfig() error {
 	return nil
 }
 
-// Close releases all models loaded by this Translator. It is safe to call
-// repeatedly; all bridges are closed even if one cleanup reports an error.
+// Close releases this Translator's model references. Shared models remain loaded
+// while another translator uses them. Close is safe to call repeatedly; all
+// bridges are closed even if one cleanup reports an error.
 func (t *Translator) Close() error {
 	if t == nil {
 		return nil

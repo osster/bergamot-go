@@ -18,8 +18,10 @@ const maxPooledStreamChunkCapacity = 64 * 1024
 
 // TranslationResult contains the outcome of one asynchronous translation.
 type TranslationResult struct {
+	// Text is the translated text when Err is nil.
 	Text string
-	Err  error
+	// Err is the translation failure, if any.
+	Err error
 }
 
 // TranslateAsync starts a translation in a goroutine and returns a channel
@@ -62,17 +64,23 @@ func (t *Translator) translateAsync(ctx context.Context, text, languagePair stri
 // StreamProgress reports completed chunks and bytes consumed from the input.
 // ChunkIndex is one-based; ChunksCompleted does not include a failed chunk.
 type StreamProgress struct {
-	ChunkIndex      int
+	// ChunkIndex is the one-based index of the current result, including a failed chunk.
+	ChunkIndex int
+	// ChunksCompleted counts successfully translated chunks.
 	ChunksCompleted int
-	BytesProcessed  int64
+	// BytesProcessed is the cumulative number of UTF-8 input bytes read.
+	BytesProcessed int64
 }
 
 // StreamResult contains one translated input chunk and its cumulative
 // progress, or a terminal error. Results arrive in input order.
 type StreamResult struct {
-	Text     string
+	// Text contains the translated chunk when Err is nil.
+	Text string
+	// Progress reports the current chunk and cumulative input progress.
 	Progress StreamProgress
-	Err      error
+	// Err is a terminal validation, read, cancellation, or translation error.
+	Err error
 }
 
 // TranslateStream reads text from input and translates it in chunks of at most

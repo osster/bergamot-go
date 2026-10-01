@@ -1,4 +1,4 @@
-module bergamot-go
+module github.com/osster/bergamot-go
 
 go 1.21
 

@@ -13,27 +13,42 @@ import (
 )
 
 var (
-	ErrInvalidConfig           = errors.New("invalid translator config")
+	// ErrInvalidConfig indicates that a translator configuration could not be read or validated.
+	ErrInvalidConfig = errors.New("invalid translator config")
+	// ErrUnsupportedLanguagePair indicates that the translator has no model for the requested pair.
 	ErrUnsupportedLanguagePair = errors.New("unsupported language pair")
-	ErrModelInitialization     = errors.New("model initialization failed")
-	ErrTranslation             = errors.New("translation failed")
-	ErrTranslatorClosed        = errors.New("translator is closed")
-	ErrEmptyInput              = errors.New("translation input is empty")
-	ErrResourceCleanup         = errors.New("resource cleanup failed")
-	ErrInvalidChunkSize        = errors.New("stream chunk size must be positive")
-	ErrStreamRead              = errors.New("stream read failed")
-	ErrOperationCanceled       = errors.New("translation operation canceled")
-	ErrOperationTimeout        = errors.New("translation operation timed out")
+	// ErrModelInitialization indicates that a configured native model could not be loaded.
+	ErrModelInitialization = errors.New("model initialization failed")
+	// ErrTranslation indicates that native inference failed.
+	ErrTranslation = errors.New("translation failed")
+	// ErrTranslatorClosed indicates that an operation was attempted on a closed translator.
+	ErrTranslatorClosed = errors.New("translator is closed")
+	// ErrEmptyInput indicates that a translation request contains no non-whitespace text.
+	ErrEmptyInput = errors.New("translation input is empty")
+	// ErrResourceCleanup indicates that releasing one or more native resources failed.
+	ErrResourceCleanup = errors.New("resource cleanup failed")
+	// ErrInvalidChunkSize indicates that a streaming request used a non-positive chunk size.
+	ErrInvalidChunkSize = errors.New("stream chunk size must be positive")
+	// ErrStreamRead indicates that the input reader failed while streaming.
+	ErrStreamRead = errors.New("stream read failed")
+	// ErrOperationCanceled indicates that an asynchronous or streaming operation was canceled.
+	ErrOperationCanceled = errors.New("translation operation canceled")
+	// ErrOperationTimeout indicates that the caller-side wait limit expired during translation.
+	ErrOperationTimeout = errors.New("translation operation timed out")
 )
 
 // Error describes a translator operation failure. Kind can be checked with
 // errors.Is, while Unwrap exposes the underlying parsing, filesystem, or native
 // bridge error when one exists.
 type Error struct {
-	Op           string
+	// Op identifies the operation that failed.
+	Op string
+	// LanguagePair is the normalized source-target pair, when applicable.
 	LanguagePair string
-	Kind         error
-	Err          error
+	// Kind is the sentinel error describing the failure category.
+	Kind error
+	// Err is the underlying parser, filesystem, or native error, if any.
+	Err error
 }
 
 func (e *Error) Error() string {
@@ -67,24 +82,33 @@ func newError(kind error, op, languagePair string, err error) *Error {
 // Config lists the model configuration files available for translation.
 // Language-pair keys use the form "source-target", such as "en-de".
 type Config struct {
-	Defaults      TranslationOptions            `yaml:"defaults" json:"defaults"`
+	// Defaults supplies fallback values inherited by language pairs.
+	Defaults TranslationOptions `yaml:"defaults" json:"defaults"`
+	// LanguagePairs maps normalized source-target identifiers to model settings.
 	LanguagePairs map[string]LanguagePairConfig `yaml:"language_pairs" json:"language_pairs"`
 }
 
 // TranslationOptions supplies optional defaults for all language pairs.
 // Zero values leave the corresponding engine option unchanged or disabled.
 type TranslationOptions struct {
-	BeamSize      int    `yaml:"beam_size" json:"beam_size"`
-	Timeout       string `yaml:"timeout" json:"timeout"`
-	ContextWindow int    `yaml:"context_window" json:"context_window"`
+	// BeamSize overrides the model value when between 1 and 256; zero preserves it.
+	BeamSize int `yaml:"beam_size" json:"beam_size"`
+	// Timeout is a positive Go duration string, up to 24 hours; empty disables it.
+	Timeout string `yaml:"timeout" json:"timeout"`
+	// ContextWindow is the number of prior source sentences to retain (0 to 100).
+	ContextWindow int `yaml:"context_window" json:"context_window"`
 }
 
 // LanguagePairConfig configures the Bergamot model used for a language pair.
 type LanguagePairConfig struct {
-	ModelConfig   string  `yaml:"model_config" json:"model_config"`
-	BeamSize      *int    `yaml:"beam_size,omitempty" json:"beam_size,omitempty"`
-	Timeout       *string `yaml:"timeout,omitempty" json:"timeout,omitempty"`
-	ContextWindow *int    `yaml:"context_window,omitempty" json:"context_window,omitempty"`
+	// ModelConfig names the Bergamot model YAML file; relative paths resolve from the translator config.
+	ModelConfig string `yaml:"model_config" json:"model_config"`
+	// BeamSize optionally overrides the default beam size, with zero preserving the model value.
+	BeamSize *int `yaml:"beam_size,omitempty" json:"beam_size,omitempty"`
+	// Timeout optionally overrides the default caller-side timeout; an empty string disables it.
+	Timeout *string `yaml:"timeout,omitempty" json:"timeout,omitempty"`
+	// ContextWindow optionally overrides the number of prior source sentences retained.
+	ContextWindow *int `yaml:"context_window,omitempty" json:"context_window,omitempty"`
 }
 
 // LoadConfig parses and validates a YAML or JSON translator configuration.

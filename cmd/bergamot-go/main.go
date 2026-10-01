@@ -8,7 +8,7 @@ import (
 	"os"
 	"strings"
 
-	"bergamot-go/pkg"
+	"github.com/osster/bergamot-go/pkg"
 )
 
 type translationBridge interface {
