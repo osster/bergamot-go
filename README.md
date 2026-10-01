@@ -126,18 +126,24 @@ changes to nested submodules:
 
 - `patches/marian-macos-arm64.patch` targets Marian revision
   `2781d735d4a10dca876d61be587afdab2726293c`.
+- `patches/marian-arm64-simd.patch` and `patches/marian-arm64-neon.patch` adapt Marian's
+  ARM SIMD types for SSE2NEON and native NEON math, respectively.
 - `patches/sentencepiece-macos-arm64.patch` targets the nested SentencePiece revision
   `ae41b7740d7006596bb9257e83340b2620db9d00`.
 
 After initializing recursive submodules at the pinned revisions above, apply each patch from its
-own repository root. Check both patches before applying either:
+own repository root. Check all patches before applying any:
 
 ```sh
 MARIAN=third_party/bergamot-translator/3rd_party/marian-dev
 SENTENCEPIECE="$MARIAN/src/3rd_party/sentencepiece"
 git -C "$MARIAN" apply --check "$PWD/patches/marian-macos-arm64.patch"
+git -C "$MARIAN" apply --check "$PWD/patches/marian-arm64-simd.patch"
+git -C "$MARIAN" apply --check "$PWD/patches/marian-arm64-neon.patch"
 git -C "$SENTENCEPIECE" apply --check "$PWD/patches/sentencepiece-macos-arm64.patch"
 git -C "$MARIAN" apply "$PWD/patches/marian-macos-arm64.patch"
+git -C "$MARIAN" apply "$PWD/patches/marian-arm64-simd.patch"
+git -C "$MARIAN" apply "$PWD/patches/marian-arm64-neon.patch"
 git -C "$SENTENCEPIECE" apply "$PWD/patches/sentencepiece-macos-arm64.patch"
 ```
 

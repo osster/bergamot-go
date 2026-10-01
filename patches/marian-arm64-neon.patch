@@ -1,0 +1,31 @@
+diff --git a/src/3rd_party/simd_utils/neon_mathfun.h b/src/3rd_party/simd_utils/neon_mathfun.h
+--- a/src/3rd_party/simd_utils/neon_mathfun.h
++++ b/src/3rd_party/simd_utils/neon_mathfun.h
+@@ -47,7 +47,7 @@
+     v4su invalid_mask = vcleq_f32(x, vdupq_n_f32(0));
+-
+-    v4si ux = vreinterpretq_s32_f32(x);
+-
+-    v4si emm0 = vshrq_n_s32(ux, 23);
+-
++
++    int32x4_t ux = vreinterpretq_s32_f32(x);
++
++    int32x4_t emm0 = vshrq_n_s32(ux, 23);
++
+     /* keep only the fractional part */
+@@ -266,7 +266,7 @@
+     v4su invalid_mask = vcleq_f32(x, vdupq_n_f32(0));
+-
+-    v4si ux = vreinterpretq_s32_f32(x);
+-
+-    v4si emm0 = vshrq_n_s32(ux, 23);
+-
++
++    int32x4_t ux = vreinterpretq_s32_f32(x);
++
++    int32x4_t emm0 = vshrq_n_s32(ux, 23);
++
+     /* keep only the fractional part */
+--
+2.40.0
