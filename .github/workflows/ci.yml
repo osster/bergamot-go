@@ -48,7 +48,7 @@ jobs:
 
       - name: Install macOS native dependencies
         if: runner.os == 'macOS'
-        run: brew install cmake protobuf boost libunwind google-perftools
+        run: brew install cmake protobuf boost libunwind gperftools
 
       - name: Build native Bergamot and cgo packages
         run: JOBS=2 ./scripts/setup.sh
