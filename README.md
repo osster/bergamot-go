@@ -73,8 +73,10 @@ On macOS, install Xcode Command Line Tools (Clang, SDK, and Make), CMake, and Gi
 provide CMake and Bergamot's native dependencies if they are not already installed:
 
 ```sh
-brew install cmake protobuf boost libunwind gperftools
+brew install cmake protobuf boost gperftools
 ```
+
+The macOS SDK provides `libunwind`; it is not installed from Homebrew.
 
 MKL and CUDA are not required for the CPU build.
 
