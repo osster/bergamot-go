@@ -73,6 +73,7 @@ apply_patch_once() {
 MARIAN=third_party/bergamot-translator/3rd_party/marian-dev
 SENTENCEPIECE="$MARIAN/src/3rd_party/sentencepiece"
 apply_patch_once "$MARIAN" "$ROOT/patches/marian-macos-arm64.patch"
+apply_patch_once "$MARIAN" "$ROOT/patches/marian-arm64-simd.patch"
 apply_patch_once "$SENTENCEPIECE" "$ROOT/patches/sentencepiece-macos-arm64.patch"
 
 printf '%s\n' 'Configuring and building the Bergamot CPU library...'

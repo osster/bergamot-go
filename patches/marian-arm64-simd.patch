@@ -1,0 +1,9 @@
+diff --git a/src/3rd_party/simd_utils/simd_utils_constants.h b/src/3rd_party/simd_utils/simd_utils_constants.h
+--- a/src/3rd_party/simd_utils/simd_utils_constants.h
++++ b/src/3rd_party/simd_utils/simd_utils_constants.h
+@@ -133,2 +133,2 @@
+-typedef int32x4_t v4si;        // vector of 4 uint32
++typedef int64x2_t v4si;        // Match the __m128i type used by SSE2NEON
+ typedef float32x4x2_t v4sfx2;
+--
+2.40.0
