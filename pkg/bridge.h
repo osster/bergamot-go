@@ -28,10 +28,12 @@ typedef struct BergamotHandle BergamotHandle;
  * allocating the message fails, *error_out is NULL. error_out itself is an
  * optional, caller-owned writable pointer slot. No C++ exception escapes.
  */
-BergamotHandle *bergamot_init(const char *model_config_path, char **error_out) BERGAMOT_BRIDGE_NOEXCEPT;
+BergamotHandle *bergamot_init(const char *model_config_path, int beam_size, char **error_out) BERGAMOT_BRIDGE_NOEXCEPT;
 
-/* Translate one UTF-8 input string. input points to input_length readable
- * bytes and is borrowed only for this call; the caller retains ownership.
+/* Translate one UTF-8 input string, optionally preceded by context. context and
+ * input point to their respective readable byte lengths and are borrowed only
+ * for this call; the caller retains ownership. The result contains only the
+ * translation corresponding to input, not the context prefix.
  * On success this returns an allocated NUL-terminated UTF-8 buffer owned by
  * the caller, which must release it with bergamot_string_free, and sets
  * *error_out to NULL. On failure it returns NULL and stores an allocated
@@ -40,7 +42,8 @@ BergamotHandle *bergamot_init(const char *model_config_path, char **error_out) B
  * *error_out is NULL. The handle must remain alive and unused by cleanup for
  * the full call. No C++ exception escapes.
  */
-char *bergamot_translate(BergamotHandle *handle, const char *input, size_t input_length, char **error_out) BERGAMOT_BRIDGE_NOEXCEPT;
+char *bergamot_translate(BergamotHandle *handle, const char *context, size_t context_length, const char *input,
+                         size_t input_length, char **error_out) BERGAMOT_BRIDGE_NOEXCEPT;
 
 /* Release a translation buffer or error message returned by this API.
  * NULL is accepted; callers must not use the buffer after releasing it.

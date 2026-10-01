@@ -16,52 +16,80 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"sync"
 	"unsafe"
 )
 
-// Bridge owns a native Bergamot service/model handle. It must be closed once
-// no further Translate calls will be made. Calls on one Bridge are not safe to
-// run concurrently; synchronization is deliberately left to higher-level APIs.
+// Bridge owns a native Bergamot service/model handle. Calls and cleanup are
+// serialized; Close may safely race with Translate.
 type Bridge struct {
+	mu     sync.Mutex
 	handle *C.BergamotHandle
 }
 
 // Init loads a Bergamot translation model using its model configuration file.
 func Init(modelConfigPath string) (*Bridge, error) {
+	return initWithBeamSize(modelConfigPath, 0)
+}
+
+func initWithBeamSize(modelConfigPath string, beamSize int) (*Bridge, error) {
 	path := C.CString(modelConfigPath)
 	defer C.free(unsafe.Pointer(path))
 
 	var cErr *C.char
-	handle := C.bergamot_init(path, &cErr)
+	handle := C.bergamot_init(path, C.int(beamSize), &cErr)
 	if handle == nil {
 		return nil, takeError(cErr, "Bergamot initialization failed")
 	}
 	if cErr != nil {
 		C.bergamot_string_free(cErr)
 	}
-	return &Bridge{handle: handle}, nil
+	bridge := &Bridge{handle: handle}
+	runtime.SetFinalizer(bridge, finalizeBridge)
+	return bridge, nil
+}
+
+func finalizeBridge(bridge *Bridge) {
+	_ = bridge.Close()
 }
 
 // Translate translates one UTF-8 string through the initialized model. The
 // input bytes are borrowed by C++ only for the duration of the native call.
 func (b *Bridge) Translate(input string) (string, error) {
-	if b == nil || b.handle == nil {
+	return b.TranslateWithContext("", input)
+}
+
+// TranslateWithContext prepends recent source text for contextual decoding,
+// while returning only the translation of input.
+func (b *Bridge) TranslateWithContext(context, input string) (string, error) {
+	if b == nil {
 		return "", errors.New("Bergamot bridge is closed")
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.handle == nil {
+		return "", errors.New("Bergamot bridge is closed")
+	}
+	var contextText *C.char
+	if len(context) != 0 {
+		contextText = (*C.char)(unsafe.Pointer(unsafe.StringData(context)))
 	}
 	var text *C.char
 	if len(input) != 0 {
 		text = (*C.char)(unsafe.Pointer(unsafe.StringData(input)))
 	}
-	translation, err := translateNative(b.handle, text, C.size_t(len(input)))
+	translation, err := translateNative(b.handle, contextText, C.size_t(len(context)), text, C.size_t(len(input)))
+	runtime.KeepAlive(context)
 	runtime.KeepAlive(input)
+	runtime.KeepAlive(b)
 	return translation, err
 }
 
 // translateNative owns and releases every buffer returned by the C API. Keeping
 // this conversion in one place ensures native failures never produce a result.
-func translateNative(handle *C.BergamotHandle, input *C.char, inputLength C.size_t) (string, error) {
+func translateNative(handle *C.BergamotHandle, context *C.char, contextLength C.size_t, input *C.char, inputLength C.size_t) (string, error) {
 	var cErr *C.char
-	result := C.bergamot_translate(handle, input, inputLength, &cErr)
+	result := C.bergamot_translate(handle, context, contextLength, input, inputLength, &cErr)
 	if result == nil {
 		return "", takeError(cErr, "Bergamot translation failed")
 	}
@@ -77,16 +105,22 @@ func translateNative(handle *C.BergamotHandle, input *C.char, inputLength C.size
 func translateWithNullHandle() (string, error) {
 	input := C.CString("failure-path-test")
 	defer C.free(unsafe.Pointer(input))
-	return translateNative(nil, input, C.size_t(len("failure-path-test")))
+	return translateNative(nil, nil, 0, input, C.size_t(len("failure-path-test")))
 }
 
 // Close releases the native service and model. It is safe to call on a nil or
 // already-closed Bridge.
 func (b *Bridge) Close() error {
-	if b != nil && b.handle != nil {
+	if b == nil {
+		return nil
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.handle != nil {
 		C.bergamot_cleanup(b.handle)
 		b.handle = nil
 	}
+	runtime.SetFinalizer(b, nil)
 	return nil
 }
 

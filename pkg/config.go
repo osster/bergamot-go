@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"gopkg.in/yaml.v3"
 )
@@ -22,6 +23,7 @@ var (
 	ErrInvalidChunkSize        = errors.New("stream chunk size must be positive")
 	ErrStreamRead              = errors.New("stream read failed")
 	ErrOperationCanceled       = errors.New("translation operation canceled")
+	ErrOperationTimeout        = errors.New("translation operation timed out")
 )
 
 // Error describes a translator operation failure. Kind can be checked with
@@ -65,12 +67,24 @@ func newError(kind error, op, languagePair string, err error) *Error {
 // Config lists the model configuration files available for translation.
 // Language-pair keys use the form "source-target", such as "en-de".
 type Config struct {
+	Defaults      TranslationOptions            `yaml:"defaults" json:"defaults"`
 	LanguagePairs map[string]LanguagePairConfig `yaml:"language_pairs" json:"language_pairs"`
+}
+
+// TranslationOptions supplies optional defaults for all language pairs.
+// Zero values leave the corresponding engine option unchanged or disabled.
+type TranslationOptions struct {
+	BeamSize      int    `yaml:"beam_size" json:"beam_size"`
+	Timeout       string `yaml:"timeout" json:"timeout"`
+	ContextWindow int    `yaml:"context_window" json:"context_window"`
 }
 
 // LanguagePairConfig configures the Bergamot model used for a language pair.
 type LanguagePairConfig struct {
-	ModelConfig string `yaml:"model_config" json:"model_config"`
+	ModelConfig   string  `yaml:"model_config" json:"model_config"`
+	BeamSize      *int    `yaml:"beam_size,omitempty" json:"beam_size,omitempty"`
+	Timeout       *string `yaml:"timeout,omitempty" json:"timeout,omitempty"`
+	ContextWindow *int    `yaml:"context_window,omitempty" json:"context_window,omitempty"`
 }
 
 // LoadConfig parses and validates a YAML or JSON translator configuration.
@@ -98,6 +112,9 @@ func LoadConfig(path string) (*Config, error) {
 	if len(config.LanguagePairs) == 0 {
 		return nil, newError(ErrInvalidConfig, "validate translator config", "", errors.New("language_pairs must contain at least one pair"))
 	}
+	if err := validateTranslationOptions(config.Defaults); err != nil {
+		return nil, newError(ErrInvalidConfig, "validate translator config defaults", "", err)
+	}
 
 	normalizedPairs := make(map[string]LanguagePairConfig, len(config.LanguagePairs))
 	for configuredPair, pairConfig := range config.LanguagePairs {
@@ -112,10 +129,43 @@ func LoadConfig(path string) (*Config, error) {
 			return nil, newError(ErrInvalidConfig, "validate translator config", pair, errors.New("model_config must not be empty"))
 		}
 		pairConfig.ModelConfig = strings.TrimSpace(pairConfig.ModelConfig)
+		options := config.Defaults
+		if pairConfig.BeamSize != nil {
+			options.BeamSize = *pairConfig.BeamSize
+		}
+		if pairConfig.Timeout != nil {
+			options.Timeout = *pairConfig.Timeout
+		}
+		if pairConfig.ContextWindow != nil {
+			options.ContextWindow = *pairConfig.ContextWindow
+		}
+		if err := validateTranslationOptions(options); err != nil {
+			return nil, newError(ErrInvalidConfig, "validate translator config", pair, err)
+		}
+		beamSize, timeout, contextWindow := options.BeamSize, options.Timeout, options.ContextWindow
+		pairConfig.BeamSize = &beamSize
+		pairConfig.Timeout = &timeout
+		pairConfig.ContextWindow = &contextWindow
 		normalizedPairs[pair] = pairConfig
 	}
 	config.LanguagePairs = normalizedPairs
 	return &config, nil
+}
+
+func validateTranslationOptions(options TranslationOptions) error {
+	if options.BeamSize < 0 || options.BeamSize > 256 {
+		return errors.New("beam_size must be 0 (unset) or between 1 and 256")
+	}
+	if options.ContextWindow < 0 || options.ContextWindow > 100 {
+		return errors.New("context_window must be between 0 and 100 sentences")
+	}
+	if options.Timeout != "" {
+		timeout, err := time.ParseDuration(options.Timeout)
+		if err != nil || timeout <= 0 || timeout > 24*time.Hour {
+			return errors.New("timeout must be a duration greater than 0 and at most 24h")
+		}
+	}
+	return nil
 }
 
 func normalizeLanguagePair(languagePair string) string {

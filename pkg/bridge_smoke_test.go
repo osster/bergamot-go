@@ -79,6 +79,13 @@ func TestBridgeSmoke(t *testing.T) {
 	if strings.TrimSpace(translation) == "" {
 		t.Fatal("Bergamot returned an empty translation")
 	}
+	contextTranslation, err := bridge.TranslateWithContext(input, input)
+	if err != nil {
+		t.Fatalf("translate with source context: %v", err)
+	}
+	if contextTranslation != translation {
+		t.Errorf("contextual translation = %q, want current-input translation %q", contextTranslation, translation)
+	}
 	if err := bridge.Close(); err != nil {
 		t.Fatalf("clean up Bergamot model: %v", err)
 	}
@@ -89,7 +96,7 @@ func TestBridgeSmoke(t *testing.T) {
 		t.Fatal("Translate after cleanup succeeded; want a closed-bridge error")
 	}
 
-	reloadedBridge, err := Init(configPath)
+	reloadedBridge, err := initWithBeamSize(configPath, 4)
 	if err != nil {
 		t.Fatalf("reload Bergamot model after cleanup: %v", err)
 	}

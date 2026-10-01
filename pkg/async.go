@@ -2,11 +2,19 @@ package bergamot
 
 import (
 	"bufio"
+	"bytes"
 	"context"
 	"errors"
 	"io"
+	"runtime"
 	"strings"
+	"sync"
+	"unsafe"
 )
+
+var streamChunkPool = sync.Pool{New: func() any { return new(bytes.Buffer) }}
+
+const maxPooledStreamChunkCapacity = 64 * 1024
 
 // TranslationResult contains the outcome of one asynchronous translation.
 type TranslationResult struct {
@@ -89,7 +97,17 @@ func (t *Translator) TranslateStream(ctx context.Context, input io.Reader, langu
 		}
 
 		reader := bufio.NewReader(input)
-		var chunk strings.Builder
+		chunk := streamChunkPool.Get().(*bytes.Buffer)
+		returnChunkToPool := true
+		defer func() {
+			if returnChunkToPool {
+				if chunk.Cap() > maxPooledStreamChunkCapacity {
+					return
+				}
+				chunk.Reset()
+				streamChunkPool.Put(chunk)
+			}
+		}()
 		chunkRuneCount := 0
 		bytesRead := int64(0)
 		chunksCompleted := 0
@@ -101,20 +119,29 @@ func (t *Translator) TranslateStream(ctx context.Context, input io.Reader, langu
 
 			r, size, readErr := reader.ReadRune()
 			if readErr == nil {
-				chunk.WriteRune(r)
+				_, _ = chunk.WriteRune(r)
 				chunkRuneCount++
 				bytesRead += int64(size)
 			}
 
 			flush := chunkRuneCount == chunkRunes || readErr != nil
 			if flush && chunkRuneCount > 0 {
-				text := chunk.String()
-				chunk.Reset()
+				chunkBytes := chunk.Bytes()
+				text := unsafe.String(unsafe.SliceData(chunkBytes), len(chunkBytes))
 				chunkRuneCount = 0
 				translation := text
 				var err error
 				if strings.TrimSpace(text) != "" {
 					translation, err = t.Translate(text, languagePair)
+					if errors.Is(err, ErrOperationTimeout) {
+						// The timed-out worker may still be borrowing text from this buffer.
+						returnChunkToPool = false
+					}
+				}
+				translation = cloneIfChunkAliased(translation, chunkBytes)
+				runtime.KeepAlive(text)
+				if returnChunkToPool {
+					chunk.Reset()
 				}
 				progress := StreamProgress{ChunkIndex: chunksCompleted + 1, ChunksCompleted: chunksCompleted, BytesProcessed: bytesRead}
 				if err != nil {
@@ -141,6 +168,18 @@ func (t *Translator) TranslateStream(ctx context.Context, input io.Reader, langu
 		}
 	}()
 	return results
+}
+
+func cloneIfChunkAliased(text string, chunk []byte) string {
+	if text == "" || len(chunk) == 0 {
+		return text
+	}
+	textStart := uintptr(unsafe.Pointer(unsafe.StringData(text)))
+	chunkStart := uintptr(unsafe.Pointer(unsafe.SliceData(chunk)))
+	if textStart >= chunkStart && textStart < chunkStart+uintptr(len(chunk)) {
+		return strings.Clone(text)
+	}
+	return text
 }
 
 func sendStreamResult(ctx context.Context, results chan<- StreamResult, result StreamResult) bool {

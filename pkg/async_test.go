@@ -15,7 +15,7 @@ func TestTranslateAsyncRunsInBackgroundAndSerializesClose(t *testing.T) {
 	started := make(chan struct{})
 	release := make(chan struct{})
 	bridge := &asyncTestBridge{started: started, release: release}
-	translator, err := newTranslator(configPath, func(string) (translationBridge, error) {
+	translator, err := newTranslator(configPath, func(string, int) (translationBridge, error) {
 		return bridge, nil
 	})
 	if err != nil {
@@ -47,7 +47,7 @@ func TestTranslateAsyncRunsInBackgroundAndSerializesClose(t *testing.T) {
 
 func TestTranslateAsyncCancellationBeforeStart(t *testing.T) {
 	configPath := writeTranslatorConfig(t, "language_pairs:\n  en-de:\n    model_config: model.yml\n")
-	translator, err := newTranslator(configPath, func(string) (translationBridge, error) {
+	translator, err := newTranslator(configPath, func(string, int) (translationBridge, error) {
 		t.Fatal("canceled async request initialized a model")
 		return nil, nil
 	})
@@ -70,7 +70,7 @@ func TestTranslateAsyncCancellationBeforeStart(t *testing.T) {
 
 func TestTranslateAsyncWithCallback(t *testing.T) {
 	configPath := writeTranslatorConfig(t, "language_pairs:\n  en-de:\n    model_config: model.yml\n")
-	translator, err := newTranslator(configPath, func(string) (translationBridge, error) {
+	translator, err := newTranslator(configPath, func(string, int) (translationBridge, error) {
 		return &asyncTestBridge{}, nil
 	})
 	if err != nil {
@@ -94,7 +94,7 @@ func TestTranslateAsyncWithCallback(t *testing.T) {
 func TestTranslateStreamChunksAndReportsProgress(t *testing.T) {
 	configPath := writeTranslatorConfig(t, "language_pairs:\n  en-de:\n    model_config: model.yml\n")
 	bridge := &asyncTestBridge{translate: func(text string) (string, error) { return text, nil }}
-	translator, err := newTranslator(configPath, func(string) (translationBridge, error) {
+	translator, err := newTranslator(configPath, func(string, int) (translationBridge, error) {
 		return bridge, nil
 	})
 	if err != nil {
@@ -134,7 +134,7 @@ func TestTranslateStreamChunksAndReportsProgress(t *testing.T) {
 
 func TestTranslateStreamReportsValidationAndReadErrors(t *testing.T) {
 	configPath := writeTranslatorConfig(t, "language_pairs:\n  en-de:\n    model_config: model.yml\n")
-	translator, err := newTranslator(configPath, func(string) (translationBridge, error) {
+	translator, err := newTranslator(configPath, func(string, int) (translationBridge, error) {
 		return &asyncTestBridge{translate: func(text string) (string, error) { return text, nil }}, nil
 	})
 	if err != nil {
@@ -162,7 +162,7 @@ func TestTranslateStreamReportsValidationAndReadErrors(t *testing.T) {
 
 func TestTranslateStreamCancellation(t *testing.T) {
 	configPath := writeTranslatorConfig(t, "language_pairs:\n  en-de:\n    model_config: model.yml\n")
-	translator, err := newTranslator(configPath, func(string) (translationBridge, error) {
+	translator, err := newTranslator(configPath, func(string, int) (translationBridge, error) {
 		t.Fatal("canceled stream initialized a model")
 		return nil, nil
 	})

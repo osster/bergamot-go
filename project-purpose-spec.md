@@ -209,67 +209,67 @@ requires an owned buffer and a Go string copy to safely release C memory.
 
 ### Context Awareness & Configuration
 
-**Status:** planned  
+**Status:** complete
 
-Implement context window maintenance to preserve accuracy across sentences. Add support for advanced parameters like beam size and timeout. Refine configuration loading logic.
+The translator validates per-pair settings and inherited defaults, supports model-time beam-size overrides, caller-side timeouts, bounded source-sentence history, and explicit configuration reload. Context history is prepended to requests and prior-context output is removed; Bergamot's blocking API cannot interrupt an active inference, and its sentence-level translation does not provide model-level cross-sentence attention.
 
 #### Tasks
 
 ##### Add parameter validation
 
-**Status:** todo
+**Status:** complete
 
-Validate language pairs, window sizes, and other configuration parameters before use
+`LoadConfig` validates language-pair identifiers, required model paths, beam sizes (0 to keep the model value, or 1–256), positive timeouts up to 24 hours, and context windows (0–100 sentences), with pair overrides applied over defaults.
 
 ##### Add support for configurable beam size and timeout
 
-**Status:** todo
+**Status:** complete
 
-Expose Bergamot parameters like beam size and timeout through configuration
+Per-pair and default `beam_size` overrides are applied before native model construction. Configured `timeout` values bound caller wait time; an active native inference is not cancellable and retains the translator lock until it completes.
 
 ##### Implement context window maintenance
 
-**Status:** todo
+**Status:** complete
 
-Track and pass previous sentences to Bergamot engine for improved translation coherence
+The translator retains a bounded source-sentence window for each language pair, prepends it to the next request, returns only the translation suffix for current input, and exposes `ResetContext` for unrelated documents. Sentence boundaries use a Go punctuation heuristic; Bergamot itself processes sentences independently and does not provide cross-sentence attention.
 
 ##### Refine configuration loading logic
 
-**Status:** todo
+**Status:** complete
 
-Implement hot-reload support and default value fallbacks for configuration loading
+`ReloadConfig` validates the updated file before applying it, retains unchanged loaded models, and closes models removed or changed by model path/beam size. Defaults inherit into each pair and explicit pair overrides are supported, including zero to disable an inherited timeout or context window.
 
 ### Concurrency & Memory Optimization
 
-**Status:** planned  
+**Status:** complete
 
-Ensure thread safety for concurrent translation requests. Optimize memory management for model inference and garbage collection. Handle resource cleanup and connection pooling efficiently.
+Concurrent translator and bridge access is serialized around each shared native model. Translators with the same resolved model-config path and beam size share a reference-counted model, and explicit close plus best-effort finalizers release native resources. Streaming reuses bounded chunk buffers, timed-out input buffers are not recycled while native calls may still borrow them, and native output copying avoids an intermediate substring allocation.
 
 #### Tasks
 
 ##### Add resource cleanup and finalizer hooks
 
-**Status:** todo
+**Status:** complete
 
-Ensure CGO resources are freed on Go GC using finalizers and proper cleanup routines
+`Translator` and `Bridge` finalizers provide best-effort cleanup when callers omit `Close`; explicit idempotent cleanup remains the deterministic lifecycle path. Direct bridge translation and cleanup are mutex-protected.
 
 ##### Implement model reference counting and pooling
 
-**Status:** todo
+**Status:** complete
 
-Share loaded models across multiple translator instances safely using reference counting
+`Translator` instances share a model keyed by resolved model-config path and beam size. Reference counts retain it until the last translator closes; tests verify initialization reuse and final-owner cleanup.
 
 ##### Implement mutex/rwlock mechanisms for thread safety
 
-**Status:** todo
+**Status:** complete
 
-Protect shared model state during concurrent translation requests using mutex/rwlock mechanisms
+Translator state, each bridge handle, and shared model calls are protected by mutexes. Concurrent calls into a shared sequential native service are serialized, and tests verify cross-translator safety.
 
 ##### Optimize memory management for model inference
 
-**Status:** todo
+**Status:** complete
 
-Reduce GC pressure by implementing object pooling for frequently allocated translation buffers
+`TranslateStream` reuses bounded byte buffers from a `sync.Pool`, discarding buffers after timeout while native inference may still borrow their contents. Context history clones retained sentences, and the C++ bridge copies output directly into its owned result buffer without allocating an intermediate substring.
 
 ### Testing, Documentation & Release
 

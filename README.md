@@ -214,9 +214,21 @@ containing this translator configuration:
 language_pairs:
   en-de:
     model_config: models/mozilla-en-de.yml
+    beam_size: 4
+    timeout: 30s
+    context_window: 3
   fr-en:
     model_config: models/mozilla-fr-en.yml
+defaults:
+  timeout: 1m
+  context_window: 2
 ```
+
+`defaults` supplies fallback values; each pair may override them. `beam_size` is 0 (or omitted) to
+keep the model config value, or 1 to 256 to override it; `timeout` is a Go duration such as `30s`
+or `1m`, and `context_window` is the number of prior source sentences to retain (0 to 100).
+Pair-level zero values can disable inherited timeouts or context windows. `LoadConfig` validates
+the mapping and options before a translator is created.
 
 Create a translator and translate synchronously with the requested pair:
 
@@ -248,8 +260,25 @@ it for subsequent translations until `Close`. Check errors with `errors.Is` and 
 sentinels such as `bergamot.ErrUnsupportedLanguagePair` or `bergamot.ErrTranslation`; the
 `*bergamot.Error` also unwraps the underlying parse or native error. Calls through a `Translator`
 are serialized so synchronous, asynchronous, streaming, and `Close` operations do not use a
-native bridge concurrently. The command-line interface above continues to accept a direct
+native bridge concurrently. Separate translators share a model when its resolved config path and
+beam size match; shared native calls are serialized, and the model remains loaded until its last
+translator closes. `Bridge` also serializes direct calls against cleanup. Explicitly call `Close`
+when finished; finalizers provide best-effort cleanup if a translator or bridge is abandoned. The
+command-line interface above continues to accept a direct
 Bergamot model config; the language-pair mapping is for the Go library API.
+
+When `context_window` is enabled, the translator retains recent source sentences per language pair,
+prepends them to the next Bergamot request, and returns only the current input's translated suffix.
+Call `translator.ResetContext("en-de")` between unrelated documents. Sentence boundaries in the
+Go history are detected from common punctuation followed by whitespace; this is a bounded source
+history, not model-level cross-sentence attention. `ReloadConfig` validates and applies edits to the
+same configuration file, retaining loaded models unless a pair's model path or beam size changed.
+
+The configured timeout bounds how long the caller waits for each synchronous translation. Bergamot's
+blocking native API cannot cancel an inference already in progress: after a timeout, that native
+call continues in the background under the translator lock, and later calls or `Close` wait for it
+to finish. Streaming checks cancellation between chunks, but cannot interrupt its current native
+call either.
 
 For non-blocking translation, receive the single result from `TranslateAsync`. Use
 `TranslateAsyncWithCallback` when callback delivery is more convenient; it also returns the
@@ -267,6 +296,8 @@ For large documents, pass an `io.Reader` to `TranslateStream`. It emits each tra
 with cumulative progress and closes the results channel at completion. `chunkRunes` bounds each
 chunk by Unicode code points; choose a size appropriate for the model and document. A canceled
 context stops work between chunks, but cannot interrupt a native translation already in progress.
+Chunk input buffers are pooled up to a bounded capacity and are discarded if a translation times
+out while native inference may still be borrowing the input.
 
 ```go
 for result := range translator.TranslateStream(ctx, reader, "en-de", 2000) {
@@ -278,8 +309,8 @@ for result := range translator.TranslateStream(ctx, reader, "en-de", 2000) {
 }
 ```
 
-Streaming translates chunks independently; context-window continuity across chunks is not yet
-provided.
+When a context window is configured, the same per-pair source history is maintained across stream
+chunks. Each chunk still incurs its own native translation call.
 
 ### Local model artifacts
 
