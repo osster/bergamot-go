@@ -48,7 +48,7 @@ void clearError(char **errorOut) noexcept {
 
 }  // namespace
 
-extern "C" BergamotHandle *bergamot_init(const char *model_config_path, char **error_out) {
+extern "C" BergamotHandle *bergamot_init(const char *model_config_path, char **error_out) noexcept {
   clearError(error_out);
   try {
     if (!model_config_path || model_config_path[0] == '\0') {
@@ -78,19 +78,19 @@ extern "C" BergamotHandle *bergamot_init(const char *model_config_path, char **e
   }
 }
 
-extern "C" char *bergamot_translate(BergamotHandle *handle, const char *input, char **error_out) {
+extern "C" char *bergamot_translate(BergamotHandle *handle, const char *input, size_t input_length, char **error_out) noexcept {
   clearError(error_out);
   try {
     if (!handle) {
       setError(error_out, "Bergamot handle is null");
       return nullptr;
     }
-    if (!input) {
+    if (!input && input_length != 0) {
       setError(error_out, "translation input is null");
       return nullptr;
     }
 
-    std::vector<std::string> inputs{std::string(input)};
+    std::vector<std::string> inputs{std::string(input ? input : "", input_length)};
     std::vector<marian::bergamot::ResponseOptions> options(1);
     auto responses = handle->service.translateMultiple(handle->model, std::move(inputs), options);
     if (responses.empty()) {
@@ -115,9 +115,9 @@ extern "C" char *bergamot_translate(BergamotHandle *handle, const char *input, c
   }
 }
 
-extern "C" void bergamot_string_free(char *value) { std::free(value); }
+extern "C" void bergamot_string_free(char *value) noexcept { std::free(value); }
 
-extern "C" void bergamot_cleanup(BergamotHandle *handle) {
+extern "C" void bergamot_cleanup(BergamotHandle *handle) noexcept {
   try {
     delete handle;
   } catch (...) {

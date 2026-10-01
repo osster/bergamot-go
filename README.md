@@ -50,7 +50,9 @@ other OS/architecture combinations are unsupported until their cgo flags and nat
 validated. Do not interpret a successful CMake build alone as platform support: the cgo-linked Go
 build must also succeed.
 
-For a native CPU build on Ubuntu 20.04/22.04, the upstream Bergamot CI installs these packages:
+For a native CPU build on Ubuntu 20.04/22.04, install the C/C++ toolchain, CMake, Git,
+and Bergamot's native dependencies (the upstream CI explicitly installs the protobuf,
+Boost, unwind, and google-perftools packages):
 
 ```sh
 sudo apt-get update
@@ -98,9 +100,12 @@ The target-only command builds the native static library; to also build the upst
 optional CLI, use the default target (`cmake --build build/bergamot --parallel 2`).
 Upstream's Ubuntu native CI uses the default target and `make -j2`.
 
-**Validation status:** On macOS arm64, the native configure/build and cgo-linked Go package
-build were verified in this workspace. The pinned submodule sources required small Clang/macOS
-compatibility edits for SentencePiece, zlib, and Marian's stack-trace helper.
+**Validation status:** On macOS arm64, Bergamot commit
+`9271618ebbdc5d21ac4dc4df9e72beb7ce644774` was configured in Release mode and built from this
+checkout with `cmake --build build/bergamot --target bergamot-translator --parallel 2`; the
+resulting archive is `build/bergamot/src/translator/libbergamot-translator.a`. The cgo-linked Go
+package build was also verified in this workspace. The pinned submodule sources required small
+Clang/macOS compatibility edits for SentencePiece, zlib, and Marian's stack-trace helper.
 
 ### Local compatibility patches
 
@@ -130,17 +135,34 @@ are local build-compatibility changes; they do not modify Bergamot or Marian ups
 
 ### Header and library locations
 
-The CMake target exports these source include roots for C++ consumers:
+The `bergamot-translator` CMake target declares these public source include roots
+(verified in `src/translator/CMakeLists.txt`):
 
 - `${BERGAMOT_SOURCE_DIR}` (in this checkout: `third_party/bergamot-translator/`)
 - `${BERGAMOT_SOURCE_DIR}/src` (in this checkout: `third_party/bergamot-translator/src/`)
 
 The Bergamot target is static and links its Marian and ssplit dependencies. For the root-level
-CMake command above, the archive is generated at
+CMake command above, the public source header roots are
+`third_party/bergamot-translator/` and `third_party/bergamot-translator/src/`; CMake declares
+both on the `bergamot-translator` target. The target archive is generated at
 `build/bergamot/src/translator/libbergamot-translator.a` on standard Unix-like toolchains.
-CMake places intermediate Marian and ssplit targets under `build/bergamot/3rd_party/`.
-These are build-tree paths (there is no install step in these instructions); confirm the actual
-archive and dependency libraries for the selected generator/platform in CMake's build output.
+In the verified macOS arm64 build, the Marian and ssplit archives are generated at
+`build/bergamot/libmarian.a` and `build/bergamot/libssplit.a`; SentencePiece is at
+`build/bergamot/3rd_party/marian-dev/src/3rd_party/sentencepiece/src/libsentencepiece.a`, and
+other transitive archives are under `build/bergamot/3rd_party/marian-dev/`. CMake-generated
+Marian headers and configuration headers are also in the corresponding `build/bergamot/3rd_party/marian-dev/`
+build tree (the cgo preamble lists its concrete include roots). These are build-tree paths
+(there is no install step in these instructions); confirm actual dependency libraries for the
+selected generator/platform in CMake's build output. To verify the main archive and locate the
+native static libraries after building, run from the project root:
+
+```sh
+test -f build/bergamot/src/translator/libbergamot-translator.a
+find build/bergamot -type f \\\( -name 'libbergamot-translator.a' -o -name 'libmarian.a' \\\
+  -o -name 'libssplit.a' -o -name 'libsentencepiece.a' \\\) -print
+``` The parent gitlink also pins Marian to
+`2781d735d4a10dca876d61be587afdab2726293c` and ssplit to
+`a311f9865ade34db1e8e080e6cc146f55dafb067` when recursively initialized.
 
 ### Go cgo bridge
 
@@ -154,15 +176,133 @@ root-level `build/bergamot` build above:
 - `CXXFLAGS` selects C++17 for the wrapper and supplies Marian's CPU/SIMD definitions on
   macOS arm64 to match the native CMake target.
 - `LDFLAGS` link `build/bergamot/src/translator/libbergamot-translator.a` followed by
-  Marian, SentencePiece, ruy/cpuinfo/clog and ssplit static archives, then PCRE2, zlib,
-  pthread, and the platform C++/Accelerate libraries. Linux selects `-lstdc++`; macOS
-  selects Accelerate, iconv, and libc++.
+  Marian and ssplit archives from `build/bergamot/`, SentencePiece from
+  `build/bergamot/3rd_party/marian-dev/src/3rd_party/sentencepiece/src/`, and ruy/cpuinfo/clog
+  archives from their Marian build-tree directories, then PCRE2, zlib, pthread, and the platform
+  C++/Accelerate libraries. Linux selects `-lstdc++`; macOS selects Accelerate, iconv, and libc++.
 
 Build with `cmake -S third_party/bergamot-translator -B build/bergamot -DCMAKE_BUILD_TYPE=Release`
 and `cmake --build build/bergamot --target bergamot-translator --parallel 2`, then compile
 Go packages with `CGO_ENABLED=1 go build ./...`. Set `CGO_ENABLED=0` is not supported for
 this native bridge. The bridge methods are sequential-only per handle; concurrent access is
 left to higher layers.
+
+### Command-line translation
+
+After building the native library, translate text by passing a model configuration and input:
+
+```sh
+CGO_ENABLED=1 go run ./cmd/bergamot-go -config path/to/model.yml "Hello, world."
+```
+
+When no text argument is supplied, the command reads the translation input from standard input:
+
+```sh
+printf 'Hello, world.' | CGO_ENABLED=1 go run ./cmd/bergamot-go -config path/to/model.yml
+```
+
+The command initializes the configured model for the translation and closes it before exiting.
+Run with `-h` for usage; model weights must be available at the paths referenced by the config.
+
+### Go translation API
+
+The library API accepts a separate YAML or JSON configuration that maps language pairs to
+Bergamot model config files. A relative `model_config` path is resolved from the directory
+containing this translator configuration:
+
+```yaml
+language_pairs:
+  en-de:
+    model_config: models/mozilla-en-de.yml
+  fr-en:
+    model_config: models/mozilla-fr-en.yml
+```
+
+Create a translator and translate synchronously with the requested pair:
+
+```go
+import (
+	"fmt"
+
+	"bergamot-go/pkg"
+)
+
+func translate() error {
+	translator, err := bergamot.NewTranslator("translator.yml")
+	if err != nil {
+		return err
+	}
+	defer translator.Close()
+
+	translation, err := translator.Translate("Hello, world.", "en-de")
+	if err != nil {
+		return err
+	}
+	fmt.Println(translation)
+	return nil
+}
+```
+
+`NewTranslator` validates the pair mapping and loads each native model on its first use, reusing
+it for subsequent translations until `Close`. Check errors with `errors.Is` and the exported
+sentinels such as `bergamot.ErrUnsupportedLanguagePair` or `bergamot.ErrTranslation`; the
+`*bergamot.Error` also unwraps the underlying parse or native error. Calls through a `Translator`
+are serialized so synchronous, asynchronous, streaming, and `Close` operations do not use a
+native bridge concurrently. The command-line interface above continues to accept a direct
+Bergamot model config; the language-pair mapping is for the Go library API.
+
+For non-blocking translation, receive the single result from `TranslateAsync`. Use
+`TranslateAsyncWithCallback` when callback delivery is more convenient; it also returns the
+result channel:
+
+```go
+result := <-translator.TranslateAsync(ctx, "Hello, world.", "en-de")
+if result.Err != nil {
+	return result.Err
+}
+fmt.Println(result.Text)
+```
+
+For large documents, pass an `io.Reader` to `TranslateStream`. It emits each translated chunk
+with cumulative progress and closes the results channel at completion. `chunkRunes` bounds each
+chunk by Unicode code points; choose a size appropriate for the model and document. A canceled
+context stops work between chunks, but cannot interrupt a native translation already in progress.
+
+```go
+for result := range translator.TranslateStream(ctx, reader, "en-de", 2000) {
+	if result.Err != nil {
+		return result.Err
+	}
+	fmt.Printf("%d chunks, %d bytes: %s", result.Progress.ChunksCompleted,
+		result.Progress.BytesProcessed, result.Text)
+}
+```
+
+Streaming translates chunks independently; context-window continuity across chunks is not yet
+provided.
+
+### Local model artifacts
+
+Choose and manage the directory where you keep model artifacts, then point the artifact entries
+in a Bergamot YAML config at those files. Relative paths are resolved from the directory containing
+the YAML file; absolute paths are also supported. For example, with `model.yml` next to a
+`models/` directory:
+
+```yaml
+models:
+  - models/model.ende.intgemm.alphas.bin
+vocabs:
+  - models/vocab.ende.spm
+  - models/vocab.ende.spm
+shortlist:
+  - models/lex.50.50.ende.s2t.bin
+  - false
+```
+
+You can instead use absolute paths such as `/opt/bergamot/models/model.ende.intgemm.alphas.bin`.
+Supply your config with `-config path/to/model.yml` as shown above; model downloading and choosing
+the artifact directory are user-managed, and the CLI does not provide a separate model-directory
+override.
 
 ### End-to-end bridge smoke test
 

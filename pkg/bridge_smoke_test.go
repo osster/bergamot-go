@@ -19,14 +19,23 @@ func TestBridgeSmoke(t *testing.T) {
 
 	configPath := os.Getenv("BERGAMOT_TEST_MODEL_CONFIG")
 	if configPath == "" {
-		modelPath := filepath.Join(projectRoot, "third_party", "bergamot-translator", "models", "mozilla-en-de", "model.ende.intgemm.alphas.bin")
-		if _, err := os.Stat(modelPath); err != nil {
-			if os.IsNotExist(err) {
-				t.Skip("Mozilla EN-DE model is not downloaded; see the README smoke-test instructions")
+		modelDir := filepath.Join(projectRoot, "third_party", "bergamot-translator", "models", "mozilla-en-de")
+		artifacts := []string{
+			"model.ende.intgemm.alphas.bin",
+			"vocab.ende.spm",
+			"lex.50.50.ende.s2t.bin",
+		}
+		for _, artifact := range artifacts {
+			modelPath := filepath.Join(modelDir, artifact)
+			if _, err := os.Stat(modelPath); err != nil {
+				if os.IsNotExist(err) {
+					t.Skipf("Mozilla EN-DE model artifact %q is not downloaded; follow the README end-to-end bridge smoke-test instructions", modelPath)
+				}
+				t.Fatalf("Mozilla EN-DE model artifact %q: %v", modelPath, err)
 			}
-			t.Fatalf("Mozilla EN-DE model %q: %v", modelPath, err)
 		}
 		configPath = filepath.Join(projectRoot, "pkg", "testdata", "bridge-smoke-mozilla-en-de.yml")
+		configPath = writeRelocatedModelConfig(t, configPath, modelDir, artifacts)
 	} else if !filepath.IsAbs(configPath) {
 		configPath = filepath.Join(projectRoot, configPath)
 	}
@@ -54,7 +63,11 @@ func TestBridgeSmoke(t *testing.T) {
 		if err != nil {
 			t.Fatalf("read Bergamot translation fixture %q: %v", fixturePath, err)
 		}
-		input = strings.TrimSpace(strings.SplitN(string(fixture), "\n", 2)[0])
+		for _, line := range strings.Split(string(fixture), "\n") {
+			if input = strings.TrimSpace(line); input != "" {
+				break
+			}
+		}
 		if input == "" {
 			t.Fatalf("Bergamot translation fixture %q is empty", fixturePath)
 		}
@@ -69,4 +82,60 @@ func TestBridgeSmoke(t *testing.T) {
 	if err := bridge.Close(); err != nil {
 		t.Fatalf("clean up Bergamot model: %v", err)
 	}
+	if err := bridge.Close(); err != nil {
+		t.Fatalf("close Bergamot model a second time: %v", err)
+	}
+	if _, err := bridge.Translate(input); err == nil {
+		t.Fatal("Translate after cleanup succeeded; want a closed-bridge error")
+	}
+
+	reloadedBridge, err := Init(configPath)
+	if err != nil {
+		t.Fatalf("reload Bergamot model after cleanup: %v", err)
+	}
+	t.Cleanup(func() {
+		if err := reloadedBridge.Close(); err != nil {
+			t.Errorf("clean up reloaded Bergamot model: %v", err)
+		}
+	})
+	reloadedTranslation, err := reloadedBridge.Translate(input)
+	if err != nil {
+		t.Fatalf("translate after model reload: %v", err)
+	}
+	if strings.TrimSpace(reloadedTranslation) == "" {
+		t.Fatal("reloaded Bergamot model returned an empty translation")
+	}
+}
+
+func writeRelocatedModelConfig(t *testing.T, sourceConfigPath, modelDir string, artifacts []string) string {
+	t.Helper()
+
+	contents, err := os.ReadFile(sourceConfigPath)
+	if err != nil {
+		t.Fatalf("read Bergamot model config %q: %v", sourceConfigPath, err)
+	}
+	tempDir := t.TempDir()
+	replacements := make([]string, 0, len(artifacts)*2)
+	for _, artifact := range artifacts {
+		artifactPath := filepath.Join(modelDir, artifact)
+		sourceRelativePath, err := filepath.Rel(filepath.Dir(sourceConfigPath), artifactPath)
+		if err != nil {
+			t.Fatalf("make source artifact path relative: %v", err)
+		}
+		tempRelativePath, err := filepath.Rel(tempDir, artifactPath)
+		if err != nil {
+			t.Fatalf("make temporary artifact path relative: %v", err)
+		}
+		sourceRelativePath = filepath.ToSlash(sourceRelativePath)
+		if !strings.Contains(string(contents), sourceRelativePath) {
+			t.Fatalf("model config %q does not reference artifact %q", sourceConfigPath, sourceRelativePath)
+		}
+		replacements = append(replacements, sourceRelativePath, filepath.ToSlash(tempRelativePath))
+	}
+	contents = []byte(strings.NewReplacer(replacements...).Replace(string(contents)))
+	configPath := filepath.Join(tempDir, filepath.Base(sourceConfigPath))
+	if err := os.WriteFile(configPath, contents, 0o600); err != nil {
+		t.Fatalf("write relocated Bergamot model config %q: %v", configPath, err)
+	}
+	return configPath
 }
