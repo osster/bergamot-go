@@ -76,7 +76,8 @@ apply_patch_once "$MARIAN" "$ROOT/patches/marian-macos-arm64.patch"
 apply_patch_once "$SENTENCEPIECE" "$ROOT/patches/sentencepiece-macos-arm64.patch"
 
 printf '%s\n' 'Configuring and building the Bergamot CPU library...'
-cmake -S third_party/bergamot-translator -B build/bergamot -DCMAKE_BUILD_TYPE=Release
+cmake -S third_party/bergamot-translator -B build/bergamot -DCMAKE_BUILD_TYPE=Release \
+	-DCMAKE_POLICY_VERSION_MINIMUM=3.5
 cmake --build build/bergamot --target bergamot-translator --parallel "$JOBS"
 
 printf '%s\n' 'Building the cgo-linked Go packages...'

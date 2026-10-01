@@ -96,14 +96,15 @@ are (run from the Bergamot submodule):
 cd third_party/bergamot-translator
 mkdir build-native
 cd build-native
-cmake ../
+cmake ../ -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 make -j2
 ```
 
 For this repository, an equivalent fresh out-of-tree build from the project root is:
 
 ```sh
-cmake -S third_party/bergamot-translator -B build/bergamot -DCMAKE_BUILD_TYPE=Release
+cmake -S third_party/bergamot-translator -B build/bergamot -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_POLICY_VERSION_MINIMUM=3.5
 cmake --build build/bergamot --target bergamot-translator --parallel 2
 ```
 
@@ -193,10 +194,10 @@ root-level `build/bergamot` build above:
   C++/Accelerate libraries. Linux selects `-lstdc++`; macOS selects Accelerate, iconv, and libc++.
 
 Build with `cmake -S third_party/bergamot-translator -B build/bergamot -DCMAKE_BUILD_TYPE=Release`
-and `cmake --build build/bergamot --target bergamot-translator --parallel 2`, then compile
-Go packages with `CGO_ENABLED=1 go build ./...`. Set `CGO_ENABLED=0` is not supported for
-this native bridge. The bridge methods are sequential-only per handle; concurrent access is
-left to higher layers.
+and `-DCMAKE_POLICY_VERSION_MINIMUM=3.5`, then run
+`cmake --build build/bergamot --target bergamot-translator --parallel 2` and compile Go packages
+with `CGO_ENABLED=1 go build ./...`. Set `CGO_ENABLED=0` is not supported for this native bridge.
+The bridge methods are sequential-only per handle; concurrent access is left to higher layers.
 
 ### Command-line translation
 
