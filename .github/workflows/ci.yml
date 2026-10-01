@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    name: ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS arm64
+            runner: macos-14
+          - name: Linux x86_64
+            runner: ubuntu-22.04
+          - name: Linux ARM64
+            runner: ubuntu-24.04-arm
+
+    steps:
+      - name: Check out repository and pinned submodules
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.21.x'
+          cache: true
+
+      - name: Install Linux native dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake git libprotobuf-dev protobuf-compiler \
+            libboost-all-dev libunwind-dev libgoogle-perftools-dev
+
+      - name: Install macOS native dependencies
+        if: runner.os == 'macOS'
+        run: brew install cmake protobuf boost libunwind google-perftools
+
+      - name: Build native Bergamot and cgo packages
+        run: JOBS=2 ./scripts/setup.sh
+
+      - name: Test
+        run: CGO_ENABLED=1 go test -race ./...
+
+      - name: Vet
+        run: CGO_ENABLED=1 go vet ./...

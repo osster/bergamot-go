@@ -275,7 +275,7 @@ Translator state, each bridge handle, and shared model calls are protected by mu
 
 **Status:** in progress
 
-Core unit and CGO integration coverage, package/API documentation, runnable examples, and an unreleased changelog are in place. The configured GitHub remote establishes `github.com/osster/bergamot-go` as the canonical module path, and the project owner is confirmed as release owner. The intended release matrix is macOS arm64, Linux x86_64, and Linux ARM64; Linux validation and public release publication remain pending.
+Core unit and CGO integration coverage, package/API documentation, runnable examples, an unreleased changelog, and a GitHub Actions validation workflow are in place. The configured GitHub remote establishes `github.com/osster/bergamot-go` as the canonical module path, and the project owner is confirmed as release owner. The intended release matrix is macOS arm64, Linux x86_64, and Linux ARM64; Linux validation and public release publication remain pending until the workflow passes on those targets.
 
 #### Tasks
 

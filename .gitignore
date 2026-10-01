@@ -1,6 +1,7 @@
 /build/
-.idea
 .*
+!.github/
+!.github/workflows/
 
  .DS_Store
  output.tmp

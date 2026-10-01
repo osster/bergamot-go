@@ -17,6 +17,13 @@ submodules; applies the local compatibility patches if needed; builds the native
 It is safe to rerun. Set `JOBS` to change native build parallelism (default: 2), or run `make setup`
 as an equivalent command. The script does not install system packages or download model weights.
 
+## Continuous integration
+
+GitHub Actions runs the native setup, race-enabled Go tests, and `go vet` on macOS arm64, Linux
+x86_64, and Linux ARM64 for pushes, pull requests, and manual runs. The workflow installs the
+native build dependencies and builds the pinned Bergamot submodules. Model-backed smoke tests are
+skipped unless their model artifacts are supplied; CI does not download those artifacts.
+
 ## Bergamot native dependency
 
 ### Pinned revision and fetch
@@ -44,9 +51,10 @@ C++17 compiler. The C compiler should come from the same toolchain. A working ne
 is needed for recursive submodule initialization. The setup script checks that these commands
 exist; it does not install them.
 
-The intended release validation matrix is macOS arm64, Linux x86_64, and Linux ARM64. The only
-platform validated end-to-end in this repository so far is macOS on Apple Silicon. Linux x86_64
-and ARM64 have platform linker selections in the bridge but still require end-to-end validation;
+The intended release validation matrix is macOS arm64, Linux x86_64, and Linux ARM64, and the
+GitHub Actions workflow runs native build and Go test validation on each. The only platform
+validated end-to-end in this repository so far is macOS on Apple Silicon. Linux x86_64 and ARM64
+still require successful CI runs before being considered validated;
 other OS/architecture combinations are unsupported until their cgo flags and native build are
 validated. Do not interpret a successful CMake build alone as platform support: the cgo-linked Go
 build must also succeed.
