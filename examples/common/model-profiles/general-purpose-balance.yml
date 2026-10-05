@@ -1,0 +1,22 @@
+models:
+  - ../../../third_party/bergamot-translator/models/mozilla-en-de/model.ende.intgemm.alphas.bin # EN-DE translation weights.
+vocabs:
+  - ../../../third_party/bergamot-translator/models/mozilla-en-de/vocab.ende.spm # Source vocabulary for tokenizing input.
+  - ../../../third_party/bergamot-translator/models/mozilla-en-de/vocab.ende.spm # Target vocabulary for decoding output; this model shares one vocabulary.
+shortlist:
+  - ../../../third_party/bergamot-translator/models/mozilla-en-de/lex.50.50.ende.s2t.bin # Source-to-target shortlist.
+  - false # No reverse-direction shortlist is used for this one-way config.
+beam-size: 1 # Decode one candidate as a conservative speed/quality starting point.
+normalize: 1.0 # Keep the model-supplied length-normalization score.
+word-penalty: 0 # Apply no additional per-token score penalty.
+max-length-break: 128 # Sentence-token length threshold for processing and batching.
+mini-batch-words: 1024 # Moderate token budget for ordinary workloads.
+workspace: 128 # Reserve 128 MiB for inference workspace.
+max-length-factor: 2.0 # Allow internal batching buckets beyond max-length-break.
+skip-cost: true # Skip model-cost calculation; valid only while beam-size is 1.
+cpu-threads: 0 # Use the engine's default CPU thread setting.
+quiet: true # Suppress general engine logs.
+quiet-translation: true # Suppress per-translation logs.
+gemm-precision: int8Alpha # Use this build-supported matrix multiplication precision.
+alignment: soft # Configure alignment; the Go API returns translated text only.
+ssplit-mode: paragraph # Treat paragraph breaks as input segmentation boundaries.

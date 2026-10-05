@@ -1,0 +1,3 @@
+language_pairs:
+  en-de:
+    model_config: ../examples/common/model-profiles/quality-focused.yml

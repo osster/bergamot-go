@@ -1,7 +1,13 @@
 # bergamot-go GoReleaser Configuration
 # Reference: https://goreleaser.com/
 
+version: 2
+
 project_name: bergamot-go
+
+before:
+  hooks:
+    - ./scripts/setup.sh
 
 builds:
   - id: bergamot-go
@@ -10,31 +16,34 @@ builds:
     goos:
       - linux
       - darwin
-      - windows
     goarch:
       - amd64
       - arm64
+    ignore:
+      - goos: darwin
+        goarch: amd64
     env:
-      - CGO_ENABLED=0
+      - CGO_ENABLED=1
     ldflags:
       - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
 
 archives:
   - id: bergamot-go-archive
-    format: tar.gz
-    format_overrides:
-      - goos: windows
-        format: zip
+    formats:
+      - tar.gz
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
     files:
       - README.md
       - LICENSE
+      - THIRD_PARTY_NOTICES.md
+      - third_party/bergamot-translator/**/LICENSE*
+      - third_party/bergamot-translator/**/NOTICE*
 
 checksum:
   name_template: "checksums.txt"
 
 snapshot:
-  name_template: "{{ .Tag }}-dev"
+  version_template: "{{ .Tag }}-dev"
 
 changelog:
   sort: asc

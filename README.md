@@ -1,209 +1,16 @@
 # bergamot-go
 
+[![CI](https://github.com/osster/bergamot-go/actions/workflows/ci.yml/badge.svg)](https://github.com/osster/bergamot-go/actions/workflows/ci.yml)
+
 Go library wrapper around Mozilla's Bergamot neural machine translation engine. The upstream
 C++ source is pinned as a Git submodule at `third_party/bergamot-translator/`.
 
-## Quick developer setup
+## Usage
 
-From a fresh clone, run this from the repository root:
-
-```sh
-./scripts/setup.sh
-```
-
-The script checks for Git, CMake, Make, Go, and C/C++ compilers; initializes the pinned recursive
-submodules; applies the local compatibility patches if needed; builds the native CPU library in
-`build/bergamot`; and verifies the cgo-linked Go packages with `CGO_ENABLED=1 go build ./...`.
-It is safe to rerun. Set `JOBS` to change native build parallelism (default: 2), or run `make setup`
-as an equivalent command. The script does not install system packages or download model weights.
-
-## Continuous integration
-
-GitHub Actions runs the native setup, race-enabled Go tests, and `go vet` on macOS arm64, Linux
-x86_64, and Linux ARM64 for pushes, pull requests, and manual runs. The workflow installs the
-native build dependencies and builds the pinned Bergamot submodules. Model-backed smoke tests are
-skipped unless their model artifacts are supplied; CI does not download those artifacts.
-
-## Bergamot native dependency
-
-### Pinned revision and fetch
-
-The parent repository pins `third_party/bergamot-translator/` as a gitlink at
-`9271618ebbdc5d21ac4dc4df9e72beb7ce644774`. This superproject gitlink is the revision
-checked out for the native-build instructions below; it pins a commit, not a moving branch.
-The parent `.gitmodules` entry uses `https://github.com/browsermt/bergamot-translator.git`.
-Fetch the pinned submodule and its required nested dependencies with:
-
-```sh
-git clone --recurse-submodules <this-project-url>
-# or, in an existing clone
-git submodule update --init --recursive third_party/bergamot-translator/
-```
-
-The recursive checkout includes Marian and ssplit; pybind11 and test fixture submodules
-are also checked out, although they are not needed for the default native library target.
-The SHA in the gitlink, not an upstream branch name, is the pin.
-
-### Prerequisites
-
-The Go bridge requires cgo, Go 1.21 or newer, Git, CMake (3.5.1 or newer), GNU Make, and a
-C++17 compiler. The C compiler should come from the same toolchain. A working network connection
-is needed for recursive submodule initialization. The setup script checks that these commands
-exist; it does not install them.
-
-The intended release validation matrix is macOS arm64, Linux x86_64, and Linux ARM64, and the
-GitHub Actions workflow runs native build and Go test validation on each. The only platform
-validated end-to-end in this repository so far is macOS on Apple Silicon. Linux x86_64 and ARM64
-still require successful CI runs before being considered validated;
-other OS/architecture combinations are unsupported until their cgo flags and native build are
-validated. Do not interpret a successful CMake build alone as platform support: the cgo-linked Go
-build must also succeed.
-
-For a native CPU build on Ubuntu 20.04/22.04, install the C/C++ toolchain, CMake, Git,
-and Bergamot's native dependencies (the upstream CI explicitly installs the protobuf,
-Boost, unwind, and google-perftools packages):
-
-```sh
-sudo apt-get update
-sudo apt-get install -y build-essential cmake git libprotobuf-dev protobuf-compiler \
-  libboost-all-dev libunwind-dev libgoogle-perftools-dev
-```
-
-On macOS, install Xcode Command Line Tools (Clang, SDK, and Make), CMake, and Git. Homebrew can
-provide CMake and Bergamot's native dependencies if they are not already installed:
-
-```sh
-brew install cmake protobuf boost gperftools
-```
-
-The macOS SDK provides `libunwind`; it is not installed from Homebrew.
-
-MKL and CUDA are not required for the CPU build.
-
-`ccache` is used in CI but is only a build speed-up. MKL is an optional CI optimization,
-not required by the CPU library build described below. CUDA is disabled by the upstream
-superproject for its Bergamot dependency. Upstream's canonical CPU instructions are in
-`third_party/bergamot-translator/README.md`; its dependency install and CI build recipe are
-in `third_party/bergamot-translator/.github/workflows/native.yml`. The recursive checkout
-also fetches Marian and ssplit, which are required source dependencies.
-
-### Build
-
-The upstream native-build instructions in `third_party/bergamot-translator/README.md`
-are (run from the Bergamot submodule):
-
-```sh
-cd third_party/bergamot-translator
-mkdir build-native
-cd build-native
-cmake ../ -DCMAKE_POLICY_VERSION_MINIMUM=3.5
-make -j2
-```
-
-For this repository, an equivalent fresh out-of-tree build from the project root is:
-
-```sh
-cmake -S third_party/bergamot-translator -B build/bergamot -DCMAKE_BUILD_TYPE=Release \
-  -DCMAKE_POLICY_VERSION_MINIMUM=3.5
-cmake --build build/bergamot --target bergamot-translator --parallel 2
-```
-
-The target-only command builds the native static library; to also build the upstream
-optional CLI, use the default target (`cmake --build build/bergamot --parallel 2`).
-Upstream's Ubuntu native CI uses the default target and `make -j2`.
-
-**Validation status:** On macOS arm64, Bergamot commit
-`9271618ebbdc5d21ac4dc4df9e72beb7ce644774` was configured in Release mode and built from this
-checkout with `cmake --build build/bergamot --target bergamot-translator --parallel 2`; the
-resulting archive is `build/bergamot/src/translator/libbergamot-translator.a`. The cgo-linked Go
-package build was also verified in this workspace. The pinned submodule sources required small
-Clang/macOS compatibility edits for SentencePiece, zlib, and Marian's stack-trace helper.
-
-### Local compatibility patches
-
-The compatibility edits are preserved as patches in this repository rather than as uncommitted
-changes to nested submodules:
-
-- `patches/marian-macos-arm64.patch` targets Marian revision
-  `2781d735d4a10dca876d61be587afdab2726293c`.
-- `patches/marian-arm64-simd.patch` and `patches/marian-arm64-neon.patch` adapt Marian's
-  ARM SIMD types for SSE2NEON and native NEON math, respectively.
-- `patches/sentencepiece-macos-arm64.patch` targets the nested SentencePiece revision
-  `ae41b7740d7006596bb9257e83340b2620db9d00`.
-
-After initializing recursive submodules at the pinned revisions above, apply each patch from its
-own repository root. Check all patches before applying any:
-
-```sh
-MARIAN=third_party/bergamot-translator/3rd_party/marian-dev
-SENTENCEPIECE="$MARIAN/src/3rd_party/sentencepiece"
-git -C "$MARIAN" apply --check "$PWD/patches/marian-macos-arm64.patch"
-git -C "$MARIAN" apply --check "$PWD/patches/marian-arm64-simd.patch"
-git -C "$MARIAN" apply --check "$PWD/patches/marian-arm64-neon.patch"
-git -C "$SENTENCEPIECE" apply --check "$PWD/patches/sentencepiece-macos-arm64.patch"
-git -C "$MARIAN" apply "$PWD/patches/marian-macos-arm64.patch"
-git -C "$MARIAN" apply "$PWD/patches/marian-arm64-simd.patch"
-git -C "$MARIAN" apply "$PWD/patches/marian-arm64-neon.patch"
-git -C "$SENTENCEPIECE" apply "$PWD/patches/sentencepiece-macos-arm64.patch"
-```
-
-Run those commands from the `bergamot-go` repository root. If either `--check` fails, verify the
-submodule revisions and review the patch against the updated source instead of forcing it. These
-are local build-compatibility changes; they do not modify Bergamot or Marian upstream history.
-
-### Header and library locations
-
-The `bergamot-translator` CMake target declares these public source include roots
-(verified in `src/translator/CMakeLists.txt`):
-
-- `${BERGAMOT_SOURCE_DIR}` (in this checkout: `third_party/bergamot-translator/`)
-- `${BERGAMOT_SOURCE_DIR}/src` (in this checkout: `third_party/bergamot-translator/src/`)
-
-The Bergamot target is static and links its Marian and ssplit dependencies. For the root-level
-CMake command above, the public source header roots are
-`third_party/bergamot-translator/` and `third_party/bergamot-translator/src/`; CMake declares
-both on the `bergamot-translator` target. The target archive is generated at
-`build/bergamot/src/translator/libbergamot-translator.a` on standard Unix-like toolchains.
-In the verified macOS arm64 build, the Marian and ssplit archives are generated at
-`build/bergamot/libmarian.a` and `build/bergamot/libssplit.a`; SentencePiece is at
-`build/bergamot/3rd_party/marian-dev/src/3rd_party/sentencepiece/src/libsentencepiece.a`, and
-other transitive archives are under `build/bergamot/3rd_party/marian-dev/`. CMake-generated
-Marian headers and configuration headers are also in the corresponding `build/bergamot/3rd_party/marian-dev/`
-build tree (the cgo preamble lists its concrete include roots). These are build-tree paths
-(there is no install step in these instructions); confirm actual dependency libraries for the
-selected generator/platform in CMake's build output. To verify the main archive and locate the
-native static libraries after building, run from the project root:
-
-```sh
-test -f build/bergamot/src/translator/libbergamot-translator.a
-find build/bergamot -type f \\\( -name 'libbergamot-translator.a' -o -name 'libmarian.a' \\\
-  -o -name 'libssplit.a' -o -name 'libsentencepiece.a' \\\) -print
-``` The parent gitlink also pins Marian to
-`2781d735d4a10dca876d61be587afdab2726293c` and ssplit to
-`a311f9865ade34db1e8e080e6cc146f55dafb067` when recursively initialized.
-
-### Go cgo bridge
-
-`pkg/bridge.go` exposes `Init`, `(*Bridge).Translate`, and `(*Bridge).Close` by calling the
-C-compatible API in `pkg/bridge.h`. The cgo preamble documents and sets the flags for the
-root-level `build/bergamot` build above:
-
-- `CPPFLAGS` include `pkg/`, Bergamot root and `src/`, Marian and its vendored headers
-  (including SentencePiece, ruy/cpuinfo, and protobuf-lite), ssplit, plus generated
-  `build/bergamot/3rd_party/marian-dev` include roots.
-- `CXXFLAGS` selects C++17 for the wrapper and supplies Marian's CPU/SIMD definitions on
-  macOS arm64 to match the native CMake target.
-- `LDFLAGS` link `build/bergamot/src/translator/libbergamot-translator.a` followed by
-  Marian and ssplit archives from `build/bergamot/`, SentencePiece from
-  `build/bergamot/3rd_party/marian-dev/src/3rd_party/sentencepiece/src/`, and ruy/cpuinfo/clog
-  archives from their Marian build-tree directories, then PCRE2, zlib, pthread, and the platform
-  C++/Accelerate libraries. Linux selects `-lstdc++`; macOS selects Accelerate, iconv, and libc++.
-
-Build with `cmake -S third_party/bergamot-translator -B build/bergamot -DCMAKE_BUILD_TYPE=Release`
-and `-DCMAKE_POLICY_VERSION_MINIMUM=3.5`, then run
-`cmake --build build/bergamot --target bergamot-translator --parallel 2` and compile Go packages
-with `CGO_ENABLED=1 go build ./...`. Set `CGO_ENABLED=0` is not supported for this native bridge.
-The bridge methods are sequential-only per handle; concurrent access is left to higher layers.
+Install prerequisites and build the native library as described in [docs/BUILD_AND_TEST.md](docs/BUILD_AND_TEST.md).
+That guide also covers developer setup, compatibility patches, and native smoke tests.
+For model sources, available language pairs, and the model used by the smoke test, see
+[docs/MODELS.md](docs/MODELS.md).
 
 ### Command-line translation
 
@@ -330,6 +137,10 @@ for result := range translator.TranslateStream(ctx, reader, "en-de", 2000) {
 When a context window is configured, the same per-pair source history is maintained across stream
 chunks. Each chunk still incurs its own native translation call.
 
+Runnable examples for file-based configuration, an in-memory config object, and a bounded
+message/worker pool are available in [examples/](examples/README.md). These keep application-level
+configuration and worker orchestration outside the wrapper package.
+
 ### Local model artifacts
 
 Choose and manage the directory where you keep model artifacts, then point the artifact entries
@@ -351,30 +162,5 @@ shortlist:
 You can instead use absolute paths such as `/opt/bergamot/models/model.ende.intgemm.alphas.bin`.
 Supply your config with `-config path/to/model.yml` as shown above; model downloading and choosing
 the artifact directory are user-managed, and the CLI does not provide a separate model-directory
-override.
-
-### End-to-end bridge smoke test
-
-`pkg/bridge_smoke_test.go` exercises native initialization, translation using the checked-in
-Bergamot input fixture, and cleanup. It uses Mozilla's production EN-DE `base-memory` model;
-the test config is in `pkg/testdata/bridge-smoke-mozilla-en-de.yml`. Model artifacts are stored
-in the submodule's ignored `models/` directory and downloaded separately. From the repository
-root, fetch the release listed in Mozilla's model registry:
-
-```sh
-MODEL_DIR=third_party/bergamot-translator/models/mozilla-en-de
-MODEL_BASE=https://storage.googleapis.com/moz-fx-translations-data--303e-prod-translations-data/models/en-de/retrain_hr_fix_names_SCgGhxUPQ2WAECHLRtzrMg/exported
-mkdir -p "$MODEL_DIR"
-curl -fL "$MODEL_BASE/model.ende.intgemm.alphas.bin.gz" -o "$MODEL_DIR/model.ende.intgemm.alphas.bin.gz"
-curl -fL "$MODEL_BASE/vocab.ende.spm.gz" -o "$MODEL_DIR/vocab.ende.spm.gz"
-curl -fL "$MODEL_BASE/lex.50.50.ende.s2t.bin.gz" -o "$MODEL_DIR/lex.50.50.ende.s2t.bin.gz"
-gunzip -f "$MODEL_DIR"/*.gz
-printf '%s  %s\n' 8df29d9494d19f47fd5d97c6a73474c6f657e9f81c1a607c431d02befdf3810f "$MODEL_DIR/model.ende.intgemm.alphas.bin" | shasum -a 256 -c
-
-CGO_ENABLED=1 go test ./pkg -run '^TestBridgeSmoke$' -v
-```
-
-If the model weights are not present, only `TestBridgeSmoke` is skipped. Set
-`BERGAMOT_TEST_MODEL_CONFIG` to use a different Bergamot model config, or
-`BERGAMOT_TEST_INPUT` to override the fixture sentence. To validate the linked package build,
-run `CGO_ENABLED=1 go build ./...` after building the native library.
+override. For Mozilla model sources and current language-pair availability, see
+[docs/MODELS.md](docs/MODELS.md).

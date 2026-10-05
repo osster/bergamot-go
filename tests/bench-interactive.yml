@@ -1,0 +1,4 @@
+language_pairs:
+  en-de:
+    model_config: ../examples/common/model-profiles/interactive-low-latency.yml
+    beam_size: 1

@@ -9,7 +9,7 @@ package bergamot
 #cgo amd64 LDFLAGS: -L${SRCDIR}/../build/bergamot/3rd_party/marian-dev/src/3rd_party/intgemm -lintgemm
 #cgo arm64 LDFLAGS: -L${SRCDIR}/../build/bergamot/3rd_party/marian-dev/src/3rd_party/ruy/ruy -lruy_context_get_ctx -lruy_context -lruy_frontend -lruy_kernel_arm -lruy_kernel_avx -lruy_kernel_avx2_fma -lruy_kernel_avx512 -lruy_apply_multiplier -lruy_pack_arm -lruy_pack_avx -lruy_pack_avx2_fma -lruy_pack_avx512 -lruy_prepare_packed_matrices -lruy_trmul -lruy_ctx -lruy_allocator -lruy_prepacked_cache -lruy_system_aligned_alloc -lruy_have_built_path_for_avx -lruy_have_built_path_for_avx2_fma -lruy_have_built_path_for_avx512 -lruy_thread_pool -lruy_blocking_counter -lruy_wait -lruy_denormal -lruy_block_map -lruy_tune -lruy_cpuinfo -L${SRCDIR}/../build/bergamot/3rd_party/marian-dev/src/3rd_party/ruy/third_party/cpuinfo -lcpuinfo -L${SRCDIR}/../build/bergamot/3rd_party/marian-dev/src/3rd_party/ruy/third_party/cpuinfo/deps/clog -lclog
 #cgo linux LDFLAGS: -lstdc++
-#cgo darwin LDFLAGS: -framework Accelerate -liconv -lc++
+#cgo darwin LDFLAGS: -framework Accelerate -liconv
 #include <stdlib.h>
 #include "bridge.h"
 */
