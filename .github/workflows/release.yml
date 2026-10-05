@@ -11,6 +11,11 @@ on:
         required: true
         default: v0.1.0
         type: string
+      publish:
+        description: Publish assets for an existing tag instead of a preview build
+        required: true
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -41,6 +46,7 @@ jobs:
       - name: Check out repository and pinned submodules
         uses: actions/checkout@v5
         with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.publish && inputs.version || github.ref }}
           submodules: recursive
 
       - name: Set up Go
@@ -64,16 +70,16 @@ jobs:
         run: JOBS=2 ./scripts/setup.sh
 
       - name: Build tagged binary
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' || inputs.publish
         uses: goreleaser/goreleaser-action@v6
         with:
           version: v2.18.2
           args: >-
-            build --single-target --skip=before --clean
+            build --single-target --skip=before --skip=validate --clean
             --output ${{ runner.temp }}/bergamot-go
 
       - name: Build preview binary
-        if: github.event_name == 'workflow_dispatch'
+        if: github.event_name == 'workflow_dispatch' && inputs.publish != true
         uses: goreleaser/goreleaser-action@v6
         with:
           version: v2.18.2
@@ -104,6 +110,7 @@ jobs:
       - name: Check out repository
         uses: actions/checkout@v5
         with:
+          ref: ${{ github.event_name == 'workflow_dispatch' && inputs.publish && inputs.version || github.ref }}
           submodules: recursive
 
       - name: Download native binaries
@@ -127,7 +134,7 @@ jobs:
           retention-days: 7
 
       - name: Publish GitHub release
-        if: github.event_name == 'push'
+        if: github.event_name == 'push' || inputs.publish
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_VERSION: ${{ github.ref_name }}
