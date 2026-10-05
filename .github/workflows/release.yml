@@ -1,0 +1,133 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version to use for a non-publishing preview
+        required: true
+        default: v0.1.0
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  build:
+    name: Build ${{ matrix.name }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: macOS arm64
+            target: darwin-arm64
+            runner: macos-14
+          - name: Linux x86_64
+            target: linux-amd64
+            runner: ubuntu-22.04
+          - name: Linux ARM64
+            target: linux-arm64
+            runner: ubuntu-24.04-arm
+
+    steps:
+      - name: Check out repository and pinned submodules
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Set up Go
+        uses: actions/setup-go@v6
+        with:
+          go-version: '1.21.x'
+          cache: true
+
+      - name: Install Linux native dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake git libprotobuf-dev protobuf-compiler \
+            libboost-all-dev libunwind-dev libgoogle-perftools-dev
+
+      - name: Install macOS native dependencies
+        if: runner.os == 'macOS'
+        run: brew install cmake protobuf boost gperftools
+
+      - name: Build native Bergamot library
+        run: JOBS=2 ./scripts/setup.sh
+
+      - name: Build tagged binary
+        if: github.event_name == 'push'
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: v2.18.2
+          args: >-
+            build --single-target --skip=before --clean
+            --output ${{ runner.temp }}/bergamot-go
+
+      - name: Build preview binary
+        if: github.event_name == 'workflow_dispatch'
+        uses: goreleaser/goreleaser-action@v6
+        with:
+          version: v2.18.2
+          args: >-
+            build --snapshot --single-target --skip=before --clean
+            --output ${{ runner.temp }}/bergamot-go
+
+      - name: Upload native binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: binary-${{ matrix.target }}
+          path: ${{ runner.temp }}/bergamot-go
+          if-no-files-found: error
+          retention-days: 1
+
+  package:
+    name: Package and publish release
+    needs: build
+    runs-on: ubuntu-22.04
+    permissions:
+      actions: read
+      contents: write
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v5
+        with:
+          submodules: recursive
+
+      - name: Download native binaries
+        uses: actions/download-artifact@v5
+        with:
+          pattern: binary-*
+          path: ${{ runner.temp }}/native-binaries
+
+      - name: Assemble archives and checksums
+        env:
+          RELEASE_VERSION: ${{ github.event_name == 'push' && github.ref_name || inputs.version }}
+        run: ./scripts/package-release.sh "$RELEASE_VERSION" "$RUNNER_TEMP/native-binaries" "$RUNNER_TEMP/release-assets"
+
+      - name: Upload release preview assets
+        if: github.event_name == 'workflow_dispatch'
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-preview-${{ inputs.version }}
+          path: ${{ runner.temp }}/release-assets/*
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Publish GitHub release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ github.ref_name }}
+        run: >-
+          gh release create "$RELEASE_VERSION" "$RUNNER_TEMP"/release-assets/*
+          --title "bergamot-go $RELEASE_VERSION" --generate-notes
