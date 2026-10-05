@@ -81,6 +81,9 @@ jobs:
             build --snapshot --single-target --skip=before --clean
             --output ${{ runner.temp }}/bergamot-go
 
+      - name: Smoke-test native binary startup
+        run: ${{ runner.temp }}/bergamot-go -h
+
       - name: Upload native binary
         uses: actions/upload-artifact@v4
         with:
