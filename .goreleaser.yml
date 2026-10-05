@@ -1,5 +1,8 @@
 # bergamot-go GoReleaser Configuration
 # Reference: https://goreleaser.com/
+# Release binaries must be built with `goreleaser build --single-target` on native
+# runners and assembled by .github/workflows/release.yml; don't run `goreleaser release`
+# from a single host because the cgo-linked native library cannot be cross-compiled.
 
 version: 2
 
