@@ -1,0 +1,4 @@
+language_pairs:
+  en-de:
+    model_config: ../examples/common/model-profiles/general-purpose-balance.yml
+    beam_size: 1

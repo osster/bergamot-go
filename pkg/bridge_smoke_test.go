@@ -29,7 +29,7 @@ func TestBridgeSmoke(t *testing.T) {
 			modelPath := filepath.Join(modelDir, artifact)
 			if _, err := os.Stat(modelPath); err != nil {
 				if os.IsNotExist(err) {
-					t.Skipf("Mozilla EN-DE model artifact %q is not downloaded; follow the README end-to-end bridge smoke-test instructions", modelPath)
+					t.Skipf("Mozilla EN-DE model artifact %q is not downloaded; follow doc/BUILD_AND_TEST.md for the end-to-end bridge smoke-test instructions", modelPath)
 				}
 				t.Fatalf("Mozilla EN-DE model artifact %q: %v", modelPath, err)
 			}

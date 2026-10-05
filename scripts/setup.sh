@@ -13,7 +13,7 @@ Usage: ./scripts/setup.sh
 Initializes pinned recursive submodules, applies the local compatibility patches
 when needed, builds Bergamot's CPU library under build/bergamot, and verifies the
 cgo-linked Go packages compile. The translation model for TestBridgeSmoke is
-separate; see README.md to download it.
+separate; see docs/BUILD_AND_TEST.md to download it.
 
 Set JOBS to change native build parallelism (default: 2).
 EOF
@@ -85,4 +85,4 @@ cmake --build build/bergamot --target bergamot-translator --parallel "$JOBS"
 printf '%s\n' 'Building the cgo-linked Go packages...'
 CGO_ENABLED=1 go build ./...
 
-printf '%s\n' 'Setup complete. See README.md for model download and smoke-test instructions.'
+printf '%s\n' 'Setup complete. See docs/BUILD_AND_TEST.md for model download and smoke-test instructions.'

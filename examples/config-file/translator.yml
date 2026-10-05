@@ -1,0 +1,4 @@
+language_pairs:
+  en-de:
+    model_config: ../../pkg/testdata/bridge-smoke-mozilla-en-de.yml
+    beam_size: 1
