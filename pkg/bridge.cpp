@@ -10,6 +10,7 @@
 #include <exception>
 #include <fstream>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <utility>
 #include <vector>
@@ -21,16 +22,38 @@
 #include <translator/service.h>
 #include <translator/translation_model.h>
 
+// A BlockingService owns Marian's process-global "general" and "valid"
+// loggers, so a second service cannot exist while one is alive. All handles
+// therefore share one service, which serves any number of models. The service
+// is not thread-safe: every use, and its creation and destruction, happen under
+// serviceMutex.
 struct BergamotHandle {
-  marian::bergamot::BlockingService service;
+  std::shared_ptr<marian::bergamot::BlockingService> service;
   std::shared_ptr<marian::bergamot::TranslationModel> model;
 
-  BergamotHandle(const marian::bergamot::BlockingService::Config &serviceConfig,
+  BergamotHandle(const std::shared_ptr<marian::bergamot::BlockingService> &sharedService,
                  const std::shared_ptr<marian::bergamot::TranslationModel> &translationModel)
-      : service(serviceConfig), model(translationModel) {}
+      : service(sharedService), model(translationModel) {}
 };
 
 namespace {
+
+std::mutex serviceMutex;
+// The last handle to close destroys the service and drops its loggers, so a
+// later bergamot_init starts from a clean logger registry.
+std::weak_ptr<marian::bergamot::BlockingService> sharedService;
+
+// acquireService returns the shared service, creating it when no handle holds
+// one. The caller must hold serviceMutex.
+std::shared_ptr<marian::bergamot::BlockingService> acquireService() {
+  auto service = sharedService.lock();
+  if (!service) {
+    marian::bergamot::BlockingService::Config serviceConfig;
+    service = std::make_shared<marian::bergamot::BlockingService>(serviceConfig);
+    sharedService = service;
+  }
+  return service;
+}
 
 void setError(char **errorOut, const char *message) noexcept {
   if (!errorOut) return;
@@ -71,9 +94,10 @@ extern "C" BergamotHandle *bergamot_init(const char *model_config_path, int beam
     marian::setThrowExceptionOnAbort(true);
     auto config = marian::bergamot::parseOptionsFromFilePath(model_config_path);
     if (beam_size > 0) config->set("beam-size", static_cast<size_t>(beam_size));
-    marian::bergamot::BlockingService::Config serviceConfig;
+    std::lock_guard<std::mutex> lock(serviceMutex);
+    auto service = acquireService();
     auto model = std::make_shared<marian::bergamot::TranslationModel>(config);
-    return new BergamotHandle(serviceConfig, model);
+    return new BergamotHandle(service, model);
   } catch (const std::exception &error) {
     setError(error_out, error.what());
     return nullptr;
@@ -105,7 +129,11 @@ extern "C" char *bergamot_translate(BergamotHandle *handle, const char *context,
     source.append(input ? input : "", input_length);
     std::vector<std::string> inputs{std::move(source)};
     std::vector<marian::bergamot::ResponseOptions> options(1);
-    auto responses = handle->service.translateMultiple(handle->model, std::move(inputs), options);
+    std::vector<marian::bergamot::Response> responses;
+    {
+      std::lock_guard<std::mutex> lock(serviceMutex);
+      responses = handle->service->translateMultiple(handle->model, std::move(inputs), options);
+    }
     if (responses.empty()) {
       setError(error_out, "Bergamot returned no translation response");
       return nullptr;
@@ -154,6 +182,9 @@ extern "C" void bergamot_string_free(char *value) noexcept { std::free(value); }
 
 extern "C" void bergamot_cleanup(BergamotHandle *handle) noexcept {
   try {
+    // Destroying the last handle destroys the shared service, which must not
+    // overlap another handle creating a new one.
+    std::lock_guard<std::mutex> lock(serviceMutex);
     delete handle;
   } catch (...) {
     // Cleanup has no error result by design; never unwind through the C ABI.

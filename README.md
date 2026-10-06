@@ -87,7 +87,8 @@ sentinels such as `bergamot.ErrUnsupportedLanguagePair` or `bergamot.ErrTranslat
 are serialized so synchronous, asynchronous, streaming, and `Close` operations do not use a
 native bridge concurrently. Separate translators share a model when its resolved config path and
 beam size match; shared native calls are serialized, and the model remains loaded until its last
-translator closes. `Bridge` also serializes direct calls against cleanup. Explicitly call `Close`
+translator closes. All models in a process share one Bergamot service, so native translations run one
+at a time across the process, even for different models. `Bridge` also serializes direct calls against cleanup. Explicitly call `Close`
 when finished; finalizers provide best-effort cleanup if a translator or bridge is abandoned. The
 command-line interface above continues to accept a direct
 Bergamot model config; the language-pair mapping is for the Go library API.
