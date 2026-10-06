@@ -4,6 +4,10 @@ Notable changes to `bergamot-go` are documented here.
 
 ## Unreleased
 
+- Fixed loading a second model while another is loaded, which failed with
+  "logger with name 'general' already exists". All bridges now share one Bergamot
+  service, so native translations are serialized across the process.
+
 ## [v0.1.0] - 2026-10-05
 
 - Added a Go library API for configured synchronous, asynchronous, streaming, and context-aware

@@ -146,3 +146,60 @@ func writeRelocatedModelConfig(t *testing.T, sourceConfigPath, modelDir string, 
 	}
 	return configPath
 }
+
+// TestBridgeSmokeMultipleModels keeps two different models loaded at once and
+// translates with both, alternating, then closes them in creation order. Set
+// BERGAMOT_TEST_MODEL_CONFIGS to two or more comma-separated model configs.
+func TestBridgeSmokeMultipleModels(t *testing.T) {
+	configs := strings.Split(os.Getenv("BERGAMOT_TEST_MODEL_CONFIGS"), ",")
+	if len(configs) < 2 || configs[0] == "" {
+		t.Skip("set BERGAMOT_TEST_MODEL_CONFIGS to two or more comma-separated model configs")
+	}
+	input := os.Getenv("BERGAMOT_TEST_INPUT")
+	if input == "" {
+		input = "Hello, world."
+	}
+
+	bridges := make([]*Bridge, 0, len(configs))
+	for _, configPath := range configs {
+		bridge, err := Init(strings.TrimSpace(configPath))
+		if err != nil {
+			t.Fatalf("initialize Bergamot model %q while %d other models are loaded: %v", configPath, len(bridges), err)
+		}
+		bridges = append(bridges, bridge)
+	}
+	for round := 0; round < 2; round++ {
+		for i, bridge := range bridges {
+			translation, err := bridge.Translate(input)
+			if err != nil {
+				t.Fatalf("translate with model %q: %v", configs[i], err)
+			}
+			if strings.TrimSpace(translation) == "" {
+				t.Fatalf("model %q returned an empty translation", configs[i])
+			}
+		}
+	}
+
+	// Closing the first model must not affect the models still loaded.
+	if err := bridges[0].Close(); err != nil {
+		t.Fatalf("clean up Bergamot model %q: %v", configs[0], err)
+	}
+	if _, err := bridges[1].Translate(input); err != nil {
+		t.Fatalf("translate with model %q after closing another model: %v", configs[1], err)
+	}
+	for i, bridge := range bridges[1:] {
+		if err := bridge.Close(); err != nil {
+			t.Fatalf("clean up Bergamot model %q: %v", configs[i+1], err)
+		}
+	}
+
+	// Once every model is closed, a new model must initialize again.
+	reloaded, err := Init(strings.TrimSpace(configs[0]))
+	if err != nil {
+		t.Fatalf("reinitialize Bergamot model %q after closing all models: %v", configs[0], err)
+	}
+	defer reloaded.Close()
+	if _, err := reloaded.Translate(input); err != nil {
+		t.Fatalf("translate after reinitialization: %v", err)
+	}
+}
