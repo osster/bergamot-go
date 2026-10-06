@@ -9,7 +9,7 @@ on:
       version:
         description: Release version to use for a non-publishing preview
         required: true
-        default: v0.1.0
+        default: v0.1.1
         type: string
       publish:
         description: Publish assets for an existing tag instead of a preview build
@@ -137,7 +137,7 @@ jobs:
         if: github.event_name == 'push' || inputs.publish
         env:
           GH_TOKEN: ${{ github.token }}
-          RELEASE_VERSION: ${{ github.ref_name }}
+          RELEASE_VERSION: ${{ github.event_name == 'push' && github.ref_name || inputs.version }}
         run: >-
           gh release create "$RELEASE_VERSION" "$RUNNER_TEMP"/release-assets/*
           --title "bergamot-go $RELEASE_VERSION" --generate-notes

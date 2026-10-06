@@ -4,6 +4,8 @@ Notable changes to `bergamot-go` are documented here.
 
 ## Unreleased
 
+## [v0.1.1] - 2026-10-06
+
 - Fixed loading a second model while another is loaded, which failed with
   "logger with name 'general' already exists". All bridges now share one Bergamot
   service, so native translations are serialized across the process.
