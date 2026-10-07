@@ -45,6 +45,19 @@ BergamotHandle *bergamot_init(const char *model_config_path, int beam_size, char
 char *bergamot_translate(BergamotHandle *handle, const char *context, size_t context_length, const char *input,
                          size_t input_length, char **error_out) BERGAMOT_BRIDGE_NOEXCEPT;
 
+/* Translate count UTF-8 inputs in one native call, so the engine packs their
+ * sentences into shared batches. inputs holds the inputs back to back, input i
+ * being input_lengths[i] bytes long; both are borrowed only for this call and
+ * inputs may be NULL when every length is 0. On success this returns one
+ * allocated buffer holding the translations back to back, in input order, and
+ * stores translation i's byte length in output_lengths[i] (a caller-owned
+ * array of count elements); release the buffer with bergamot_string_free.
+ * Failure, error ownership and handle lifetime are as for bergamot_translate.
+ * No context is used. No C++ exception escapes.
+ */
+char *bergamot_translate_multiple(BergamotHandle *handle, const char *inputs, const size_t *input_lengths,
+                                  size_t count, size_t *output_lengths, char **error_out) BERGAMOT_BRIDGE_NOEXCEPT;
+
 /* Release a translation buffer or error message returned by this API.
  * NULL is accepted; callers must not use the buffer after releasing it.
  */

@@ -178,6 +178,71 @@ extern "C" char *bergamot_translate(BergamotHandle *handle, const char *context,
   }
 }
 
+extern "C" char *bergamot_translate_multiple(BergamotHandle *handle, const char *inputs, const size_t *input_lengths,
+                                             size_t count, size_t *output_lengths, char **error_out) noexcept {
+  clearError(error_out);
+  try {
+    if (!handle) {
+      setError(error_out, "Bergamot handle is null");
+      return nullptr;
+    }
+    if (count != 0 && (!input_lengths || !output_lengths)) {
+      setError(error_out, "translation lengths are null");
+      return nullptr;
+    }
+
+    std::vector<std::string> sources;
+    sources.reserve(count);
+    size_t offset = 0;
+    for (size_t i = 0; i < count; ++i) {
+      const size_t length = input_lengths[i];
+      if (length == 0) {
+        sources.emplace_back();
+        continue;
+      }
+      if (!inputs) {
+        setError(error_out, "translation input is null");
+        return nullptr;
+      }
+      sources.emplace_back(inputs + offset, length);
+      offset += length;
+    }
+    std::vector<marian::bergamot::ResponseOptions> options(count);
+    std::vector<marian::bergamot::Response> responses;
+    {
+      std::lock_guard<std::mutex> lock(serviceMutex);
+      responses = handle->service->translateMultiple(handle->model, std::move(sources), options);
+    }
+    if (responses.size() != count) {
+      setError(error_out, "Bergamot returned a different number of translations than inputs");
+      return nullptr;
+    }
+
+    size_t total = 0;
+    for (const auto &response : responses) total += response.getTranslatedText().size();
+    char *result = static_cast<char *>(std::malloc(total + 1));
+    if (!result) {
+      setError(error_out, "unable to allocate translation result");
+      return nullptr;
+    }
+    size_t written = 0;
+    for (size_t i = 0; i < count; ++i) {
+      const std::string &translation = responses[i].getTranslatedText();
+      std::memcpy(result + written, translation.data(), translation.size());
+      output_lengths[i] = translation.size();
+      written += translation.size();
+    }
+    result[total] = '\0';
+    return result;
+  } catch (const std::exception &error) {
+    setError(error_out, error.what());
+    return nullptr;
+  } catch (...) {
+    setError(error_out, "unknown C++ exception while translating");
+    return nullptr;
+  }
+}
+
 extern "C" void bergamot_string_free(char *value) noexcept { std::free(value); }
 
 extern "C" void bergamot_cleanup(BergamotHandle *handle) noexcept {

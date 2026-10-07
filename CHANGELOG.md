@@ -4,6 +4,15 @@ Notable changes to `bergamot-go` are documented here.
 
 ## Unreleased
 
+- Added `Translator.TranslateMultiple(texts, languagePair)`: translates many texts in one native
+  call, so Bergamot packs their sentences into shared mini-batches. About 2× faster than one call
+  per text for short chat messages. Results are in input order; it neither uses nor updates the
+  context history, and the pair's timeout bounds the whole call.
+- Added `Bridge.TranslateMultiple` and the C function `bergamot_translate_multiple`, which passes all
+  inputs in one buffer with a length array and returns all translations in one buffer.
+- `Translate` and `TranslateMultiple` share the timeout and model-initialization code; behavior of
+  `Translate` is unchanged.
+
 ## [v0.1.1] - 2026-10-06
 
 - Fixed loading a second model while another is loaded, which failed with

@@ -329,3 +329,104 @@ func writeTranslatorConfig(t *testing.T, contents string) string {
 	}
 	return path
 }
+
+func TestTranslatorTranslateMultipleUsesBatchBridge(t *testing.T) {
+	configPath := writeTranslatorConfig(t, "language_pairs:\n  en-de:\n    model_config: model.yml\n")
+	bridge := &batchRecordingBridge{}
+	translator, err := newTranslator(configPath, func(string, int) (translationBridge, error) { return bridge, nil })
+	if err != nil {
+		t.Fatalf("newTranslator() error = %v", err)
+	}
+	defer translator.Close()
+
+	got, err := translator.TranslateMultiple([]string{"One.", "Two."}, "en-de")
+	if err != nil {
+		t.Fatalf("TranslateMultiple() error = %v", err)
+	}
+	if want := []string{"de:One.", "de:Two."}; strings.Join(got, "|") != strings.Join(want, "|") {
+		t.Errorf("TranslateMultiple() = %q, want %q", got, want)
+	}
+	if bridge.batchCalls != 1 {
+		t.Errorf("native batch calls = %d, want 1", bridge.batchCalls)
+	}
+}
+
+func TestTranslatorTranslateMultipleFallsBackToSingleCalls(t *testing.T) {
+	configPath := writeTranslatorConfig(t, "language_pairs:\n  en-de:\n    model_config: model.yml\n")
+	bridge := &fakeTranslationBridge{translate: func(input string) (string, error) { return "de:" + input, nil }}
+	translator, err := newTranslator(configPath, func(string, int) (translationBridge, error) { return bridge, nil })
+	if err != nil {
+		t.Fatalf("newTranslator() error = %v", err)
+	}
+	defer translator.Close()
+
+	got, err := translator.TranslateMultiple([]string{"One.", "Two."}, "en-de")
+	if err != nil {
+		t.Fatalf("TranslateMultiple() error = %v", err)
+	}
+	if strings.Join(got, "|") != "de:One.|de:Two." {
+		t.Errorf("TranslateMultiple() = %q", got)
+	}
+	if bridge.translateCalls != 2 {
+		t.Errorf("native translation calls = %d, want 2", bridge.translateCalls)
+	}
+}
+
+func TestTranslatorTranslateMultipleErrors(t *testing.T) {
+	configPath := writeTranslatorConfig(t, "language_pairs:\n  en-de:\n    model_config: model.yml\n    timeout: 10ms\n")
+	backendErr := errors.New("native failure")
+	bridge := &batchRecordingBridge{err: backendErr}
+	translator, err := newTranslator(configPath, func(string, int) (translationBridge, error) { return bridge, nil })
+	if err != nil {
+		t.Fatalf("newTranslator() error = %v", err)
+	}
+
+	if _, err := translator.TranslateMultiple([]string{"One.", " "}, "en-de"); !errors.Is(err, ErrEmptyInput) {
+		t.Errorf("empty input error = %v, want ErrEmptyInput", err)
+	}
+	if _, err := translator.TranslateMultiple([]string{"One."}, "fr-en"); !errors.Is(err, ErrUnsupportedLanguagePair) {
+		t.Errorf("unsupported pair error = %v, want ErrUnsupportedLanguagePair", err)
+	}
+	if got, err := translator.TranslateMultiple(nil, "en-de"); err != nil || got != nil {
+		t.Errorf("TranslateMultiple(nil) = %q, %v, want nil, nil", got, err)
+	}
+	if _, err := translator.TranslateMultiple([]string{"One."}, "en-de"); !errors.Is(err, ErrTranslation) || !errors.Is(err, backendErr) {
+		t.Errorf("backend error = %v, want ErrTranslation wrapping native failure", err)
+	}
+
+	bridge.err = nil
+	bridge.delay = 50 * time.Millisecond
+	if _, err := translator.TranslateMultiple([]string{"One."}, "en-de"); !errors.Is(err, ErrOperationTimeout) {
+		t.Errorf("timeout error = %v, want ErrOperationTimeout", err)
+	}
+	if err := translator.Close(); err != nil {
+		t.Fatalf("Close() error = %v", err)
+	}
+	if _, err := translator.TranslateMultiple([]string{"One."}, "en-de"); !errors.Is(err, ErrTranslatorClosed) {
+		t.Errorf("TranslateMultiple() after Close() error = %v, want ErrTranslatorClosed", err)
+	}
+}
+
+// batchRecordingBridge translates batches by prefixing "de:"
+type batchRecordingBridge struct {
+	batchCalls int
+	delay      time.Duration
+	err        error
+}
+
+func (b *batchRecordingBridge) Translate(input string) (string, error) { return "de:" + input, nil }
+
+func (b *batchRecordingBridge) TranslateMultiple(inputs []string) ([]string, error) {
+	b.batchCalls++
+	time.Sleep(b.delay)
+	if b.err != nil {
+		return nil, b.err
+	}
+	translations := make([]string, len(inputs))
+	for i, input := range inputs {
+		translations[i] = "de:" + input
+	}
+	return translations, nil
+}
+
+func (b *batchRecordingBridge) Close() error { return nil }

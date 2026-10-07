@@ -106,6 +106,22 @@ call continues in the background under the translator lock, and later calls or `
 to finish. Streaming checks cancellation between chunks, but cannot interrupt its current native
 call either.
 
+To translate many texts at once, for example the messages of a chat, use `TranslateMultiple`.
+It sends all texts to Bergamot in one native call, so their sentences are packed into shared
+mini-batches (`mini-batch-words` in the model config) instead of one nearly empty batch per text:
+
+```go
+translations, err := translator.TranslateMultiple([]string{"Hello!", "See you tomorrow."}, "en-de")
+```
+
+Results are in input order. Every text must be non-empty, or the call fails with
+`ErrEmptyInput`. It neither uses nor updates the context history, and the pair's `timeout` bounds
+the whole call. A text may translate slightly differently in a batch than alone: with a lexical
+shortlist in the model config, the allowed output words are computed per batch, from all of its
+sentences. Without a shortlist, batch and single output match except for rare floating-point
+differences. One native call holds the process-wide service lock for its whole duration, so split
+very large batches if other translations must not wait behind them.
+
 For non-blocking translation, receive the single result from `TranslateAsync`. Use
 `TranslateAsyncWithCallback` when callback delivery is more convenient; it also returns the
 result channel:

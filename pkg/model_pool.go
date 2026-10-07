@@ -94,6 +94,18 @@ func (b *sharedBridge) translate(context, input string) (string, error) {
 	return model.bridge.Translate(input)
 }
 
+func (b *sharedBridge) TranslateMultiple(inputs []string) ([]string, error) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.model == nil {
+		return nil, errors.New("shared Bergamot model is closed")
+	}
+	model := b.model
+	model.mu.Lock()
+	defer model.mu.Unlock()
+	return translateMultiple(model.bridge, inputs)
+}
+
 func (b *sharedBridge) Close() error {
 	if b == nil {
 		return nil
