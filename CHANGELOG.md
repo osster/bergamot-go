@@ -4,6 +4,8 @@ Notable changes to `bergamot-go` are documented here.
 
 ## Unreleased
 
+## [v0.1.2] - 2026-10-07
+
 - Added `Translator.TranslateMultiple(texts, languagePair)`: translates many texts in one native
   call, so Bergamot packs their sentences into shared mini-batches. About 2× faster than one call
   per text for short chat messages. Results are in input order; it neither uses nor updates the
