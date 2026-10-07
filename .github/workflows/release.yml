@@ -9,7 +9,7 @@ on:
       version:
         description: Release version to use for a non-publishing preview
         required: true
-        default: v0.1.1
+        default: v0.1.2
         type: string
       publish:
         description: Publish assets for an existing tag instead of a preview build
