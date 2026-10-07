@@ -170,6 +170,20 @@ The Go package parses language-pair configuration, lazily initializes and reuses
 
 `(*Translator).Translate(text, languagePair)` dispatches to the configured bridge and wraps failures. Tests cover parsing, path resolution, bridge reuse, validation, and error propagation.
 
+##### Implement batch translation
+
+**Status:** complete
+
+`(*Translator).TranslateMultiple(texts, languagePair)` translates all texts in one native call
+through `Bridge.TranslateMultiple` and the C function `bergamot_translate_multiple`. Inputs cross
+the boundary as one byte buffer plus a length array (Go memory without Go pointers, as cgo
+requires); the bridge returns one malloc'd buffer with all translations and fills a caller-owned
+array of output lengths, so a call costs one allocation each way regardless of the number of
+texts. Bridges without a batch call (test fakes) fall back to one `Translate` per text. Unit tests
+cover the batch path, the fallback, empty input, unsupported pairs, native failures, timeout and
+use after close; the model-backed smoke test checks that a batch matches single translations and
+passes empty inputs through.
+
 ### Asynchronous & Streaming APIs
 
 **Status:** complete

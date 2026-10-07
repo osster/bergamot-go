@@ -86,6 +86,13 @@ func TestBridgeSmoke(t *testing.T) {
 	if contextTranslation != translation {
 		t.Errorf("contextual translation = %q, want current-input translation %q", contextTranslation, translation)
 	}
+	batch, err := bridge.TranslateMultiple([]string{input, "", input})
+	if err != nil {
+		t.Fatalf("translate a batch: %v", err)
+	}
+	if len(batch) != 3 || batch[0] != translation || batch[1] != "" || batch[2] != translation {
+		t.Errorf("batch translation = %q, want [%q \"\" %q]", batch, translation, translation)
+	}
 	if err := bridge.Close(); err != nil {
 		t.Fatalf("clean up Bergamot model: %v", err)
 	}

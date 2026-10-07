@@ -19,6 +19,7 @@ import (
 	"errors"
 	"fmt"
 	"runtime"
+	"strings"
 	"sync"
 	"unsafe"
 )
@@ -86,6 +87,60 @@ func (b *Bridge) TranslateWithContext(context, input string) (string, error) {
 	runtime.KeepAlive(input)
 	runtime.KeepAlive(b)
 	return translation, err
+}
+
+// TranslateMultiple translates the inputs in one native call, so the engine
+// packs their sentences into shared batches. Results are in input order. No
+// context is used.
+func (b *Bridge) TranslateMultiple(inputs []string) ([]string, error) {
+	if b == nil {
+		return nil, errors.New("Bergamot bridge is closed")
+	}
+	if len(inputs) == 0 {
+		return nil, nil
+	}
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if b.handle == nil {
+		return nil, errors.New("Bergamot bridge is closed")
+	}
+
+	// One buffer and plain length arrays: cgo forbids passing Go memory that holds Go pointers
+	joined := strings.Join(inputs, "")
+	var text *C.char
+	if len(joined) != 0 {
+		text = (*C.char)(unsafe.Pointer(unsafe.StringData(joined)))
+	}
+	inputLengths := make([]C.size_t, len(inputs))
+	for i, input := range inputs {
+		inputLengths[i] = C.size_t(len(input))
+	}
+	outputLengths := make([]C.size_t, len(inputs))
+
+	var cErr *C.char
+	result := C.bergamot_translate_multiple(b.handle, text, &inputLengths[0], C.size_t(len(inputs)), &outputLengths[0], &cErr)
+	runtime.KeepAlive(joined)
+	runtime.KeepAlive(b)
+	if result == nil {
+		return nil, takeError(cErr, "Bergamot translation failed")
+	}
+	defer C.bergamot_string_free(result)
+	if cErr != nil {
+		C.bergamot_string_free(cErr)
+	}
+
+	total := 0
+	for _, length := range outputLengths {
+		total += int(length)
+	}
+	translated := C.GoStringN(result, C.int(total))
+	translations := make([]string, len(inputs))
+	offset := 0
+	for i, length := range outputLengths {
+		translations[i] = translated[offset : offset+int(length)]
+		offset += int(length)
+	}
+	return translations, nil
 }
 
 // translateNative owns and releases every buffer returned by the C API. Keeping

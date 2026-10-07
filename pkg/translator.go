@@ -20,6 +20,30 @@ type contextualTranslationBridge interface {
 	TranslateWithContext(string, string) (string, error)
 }
 
+type batchTranslationBridge interface {
+	TranslateMultiple([]string) ([]string, error)
+}
+
+// translateMultiple uses the bridge's batch call, or translates one input at a time
+func translateMultiple(bridge translationBridge, inputs []string) ([]string, error) {
+	if batch, ok := bridge.(batchTranslationBridge); ok {
+		translations, err := batch.TranslateMultiple(inputs)
+		if err == nil && len(translations) != len(inputs) {
+			err = fmt.Errorf("got %d translations for %d inputs", len(translations), len(inputs))
+		}
+		return translations, err
+	}
+	translations := make([]string, len(inputs))
+	for i, input := range inputs {
+		translation, err := bridge.Translate(input)
+		if err != nil {
+			return nil, err
+		}
+		translations[i] = translation
+	}
+	return translations, nil
+}
+
 type bridgeInitializer func(string, int) (translationBridge, error)
 
 type pairSettings struct {
@@ -123,56 +147,116 @@ func (t *Translator) Translate(text, languagePair string) (string, error) {
 	if !supported {
 		return "", newError(ErrUnsupportedLanguagePair, "translate", pair, nil)
 	}
-	if settings.timeout > 0 {
-		type outcome struct {
-			text string
-			err  error
-		}
-		result := make(chan outcome, 1)
-		go func() {
-			translated, err := t.translateWithoutTimeout(text, pair)
-			result <- outcome{text: translated, err: err}
-		}()
-		timer := time.NewTimer(settings.timeout)
-		defer timer.Stop()
-		select {
-		case completed := <-result:
-			return completed.text, completed.err
-		case <-timer.C:
-			select {
-			case completed := <-result:
-				return completed.text, completed.err
-			default:
-				return "", newError(ErrOperationTimeout, "translate", pair, context.DeadlineExceeded)
-			}
+	return withTimeout(settings.timeout, pair, func() (string, error) {
+		return t.translateWithoutTimeout(text, pair)
+	})
+}
+
+// TranslateMultiple translates the texts with the model configured for
+// languagePair in one native call, so the engine packs their sentences into
+// shared batches. Results are in input order. It fails like Translate, and for
+// any empty text. It neither uses nor updates the context history. A configured
+// timeout bounds the whole call.
+func (t *Translator) TranslateMultiple(texts []string, languagePair string) ([]string, error) {
+	if t == nil {
+		return nil, newError(ErrTranslatorClosed, "translate", languagePair, nil)
+	}
+	pair := normalizeLanguagePair(languagePair)
+	for _, text := range texts {
+		if strings.TrimSpace(text) == "" {
+			return nil, newError(ErrEmptyInput, "translate", pair, nil)
 		}
 	}
-	return t.translateWithoutTimeout(text, pair)
+	t.mu.Lock()
+	if t.closed {
+		t.mu.Unlock()
+		return nil, newError(ErrTranslatorClosed, "translate", pair, nil)
+	}
+	settings, supported := t.pairSettings[pair]
+	t.mu.Unlock()
+	if !supported {
+		return nil, newError(ErrUnsupportedLanguagePair, "translate", pair, nil)
+	}
+	if len(texts) == 0 {
+		return nil, nil
+	}
+	return withTimeout(settings.timeout, pair, func() ([]string, error) {
+		t.mu.Lock()
+		defer t.mu.Unlock()
+		bridge, err := t.bridgeLocked(pair)
+		if err != nil {
+			return nil, err
+		}
+		translations, err := translateMultiple(bridge, texts)
+		if err != nil {
+			return nil, newError(ErrTranslation, "translate", pair, err)
+		}
+		return translations, nil
+	})
+}
+
+// withTimeout runs translate, bounding the caller's wait when timeout is set;
+// native inference is not stopped and finishes in the background
+func withTimeout[T any](timeout time.Duration, pair string, translate func() (T, error)) (T, error) {
+	if timeout <= 0 {
+		return translate()
+	}
+	type outcome struct {
+		value T
+		err   error
+	}
+	result := make(chan outcome, 1)
+	go func() {
+		value, err := translate()
+		result <- outcome{value: value, err: err}
+	}()
+	timer := time.NewTimer(timeout)
+	defer timer.Stop()
+	select {
+	case completed := <-result:
+		return completed.value, completed.err
+	case <-timer.C:
+		select {
+		case completed := <-result:
+			return completed.value, completed.err
+		default:
+			var zero T
+			return zero, newError(ErrOperationTimeout, "translate", pair, context.DeadlineExceeded)
+		}
+	}
+}
+
+// bridgeLocked returns the pair's bridge, initializing its model on first use.
+// The pair must be configured; the caller holds t.mu.
+func (t *Translator) bridgeLocked(pair string) (translationBridge, error) {
+	if t.closed {
+		return nil, newError(ErrTranslatorClosed, "translate", pair, nil)
+	}
+	settings, supported := t.pairSettings[pair]
+	if !supported {
+		return nil, newError(ErrUnsupportedLanguagePair, "translate", pair, nil)
+	}
+	if bridge, loaded := t.bridges[pair]; loaded {
+		return bridge, nil
+	}
+	bridge, err := acquireSharedBridge(modelPoolKey{modelConfig: settings.modelConfig, beamSize: settings.beamSize}, t.initialize)
+	if err != nil {
+		return nil, newError(ErrModelInitialization, "initialize model", pair, err)
+	}
+	t.bridges[pair] = bridge
+	return bridge, nil
 }
 
 func (t *Translator) translateWithoutTimeout(text, pair string) (string, error) {
 	t.mu.Lock()
 	defer t.mu.Unlock()
-	if t.closed {
-		return "", newError(ErrTranslatorClosed, "translate", pair, nil)
+	bridge, err := t.bridgeLocked(pair)
+	if err != nil {
+		return "", err
 	}
-	settings, supported := t.pairSettings[pair]
-	if !supported {
-		return "", newError(ErrUnsupportedLanguagePair, "translate", pair, nil)
-	}
-
-	bridge, loaded := t.bridges[pair]
-	if !loaded {
-		var err error
-		bridge, err = acquireSharedBridge(modelPoolKey{modelConfig: settings.modelConfig, beamSize: settings.beamSize}, t.initialize)
-		if err != nil {
-			return "", newError(ErrModelInitialization, "initialize model", pair, err)
-		}
-		t.bridges[pair] = bridge
-	}
+	settings := t.pairSettings[pair]
 
 	var translation string
-	var err error
 	if contextualBridge, ok := bridge.(contextualTranslationBridge); ok {
 		translation, err = contextualBridge.TranslateWithContext(strings.Join(t.context[pair], " "), text)
 	} else {
